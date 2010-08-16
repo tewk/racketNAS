@@ -9,6 +9,7 @@
 
 
 ;; safe primitives
+
 (require (rename-in scheme [vector-ref vr] [vector-set! vs!])
          scheme/fixnum)
 
@@ -21,34 +22,16 @@
                     [unsafe-fx= fx=]
                     [unsafe-fx<= fx<=]))
 
-(define CLASS #\S)
 (define max-iterations 10)
 (define test-array-size 5)
-(define total-keys-log-2 0)
-(define max-key-log-2 0)
-(define num-buckets-log-2 0)
 
 (define total-keys 0)
 (define max-key 0)
 (define num-buckets 0)
 (define num-keys 0)
-(define size-of-buffers 0)
-
-(define timer-on #f)
-(define timer 0)
 
 (define test-index-array #())
 (define test-rank-array #())
-(define S-test-index-array #(48427 17148 23627 62548 4431))
-(define S-test-rank-array #(0 18 346 64917 65463))
-(define W-test-index-array #(357773 934767 875723 898999 404505))
-(define W-test-rank-array #(1249 11698 1039987 1043896 1048018))
-(define A-test-index-array #(2112377 662041 5336171 3642833 4250760))
-(define A-test-rank-array #(104 17523 123928 8288932 8388264))
-(define B-test-index-array #(41869 812306 5102857 18232239 26860214))
-(define B-test-rank-array #(33422937 10244 59149 33135281 99))
-(define C-test-index-array #(44172927 72999161 74326391 129606274 21736814))
-(define C-test-rank-array #(61147 882988 266290 133997595 133525895))
 
 (define passed-verification 0)
 
@@ -59,54 +42,38 @@
 
 (define num-threads 0)
 
-
-;; init-is-base : character boolean -> void
-(define (init-is-base cls np serial)
-  (set! CLASS cls)
-  (set! num-threads np)
+(define (initial-conditions cls)
+  (define S-test-index-array #(48427 17148 23627 62548 4431))
+  (define S-test-rank-array #(0 18 346 64917 65463))
+  (define W-test-index-array #(357773 934767 875723 898999 404505))
+  (define W-test-rank-array #(1249 11698 1039987 1043896 1048018))
+  (define A-test-index-array #(2112377 662041 5336171 3642833 4250760))
+  (define A-test-rank-array #(104 17523 123928 8288932 8388264))
+  (define B-test-index-array #(41869 812306 5102857 18232239 26860214))
+  (define B-test-rank-array #(33422937 10244 59149 33135281 99))
+  (define C-test-index-array #(44172927 72999161 74326391 129606274 21736814))
+  (define C-test-rank-array #(61147 882988 266290 133997595 133525895))
   (case cls 
-    [(#\S) 
-     (begin 
-       (set! test-index-array S-test-index-array)
-       (set! test-rank-array S-test-rank-array) 
-       (set! total-keys-log-2 16) 
-       (set! max-key-log-2 11) 
-       (set! num-buckets-log-2 9))]       
-    [(#\W) 
-     (begin 
-       (set! test-index-array W-test-index-array) 
-       (set! test-rank-array W-test-rank-array) 
-       (set! total-keys-log-2 20)
-       (set! max-key-log-2 16)
-       (set! num-buckets-log-2 10))]
-    [(#\A) 
-     (begin 
-       (set! test-index-array A-test-index-array) 
-       (set! test-rank-array A-test-rank-array) 
-       (set! total-keys-log-2 23) 
-       (set! max-key-log-2 19) 
-       (set! num-buckets-log-2 10))]
-    [(#\B) 
-     (begin 
-       (set! test-index-array B-test-index-array) 
-       (set! test-rank-array B-test-rank-array) 
-       (set! total-keys-log-2 25) 
-       (set! max-key-log-2 21) 
-       (set! num-buckets-log-2 10))]
-    [(#\C) 
-     (begin 
-       (set! test-index-array C-test-index-array) 
-       (set! test-rank-array C-test-rank-array) 
-       (set! total-keys-log-2 27) 
-       (set! max-key-log-2 23) 
-       (set! num-buckets-log-2 10))])
+    [(#\S) (values S-test-index-array S-test-rank-array 16 11 9)]       
+    [(#\W) (values W-test-index-array W-test-rank-array 20 16 10)]
+    [(#\A) (values A-test-index-array A-test-rank-array 23 19 10)]
+    [(#\B) (values B-test-index-array B-test-rank-array 25 21 10)]
+    [(#\C) (values C-test-index-array C-test-rank-array 27 23 10)]))
+
+;; init-is: character boolean -> void
+(define (init-is cls np ser)
+  (set! serial ser)
+  (set! num-threads np)
+  (define-values (tia tra total-keys-log-2 max-key-log-2 num-buckets-log-2)
+    (initial-conditions cls))
   ;Common variables 
+  (set! test-index-array tia)
+  (set! test-rank-array tra)
   (set! total-keys (arithmetic-shift 1 total-keys-log-2))
   (set! max-key (arithmetic-shift 1 max-key-log-2))
   (set! num-buckets (arithmetic-shift 1 num-buckets-log-2))
   (set! num-keys total-keys)
-  (set! size-of-buffers num-keys)
-  (set! key-array (make-vector size-of-buffers 0))
+  (set! key-array (make-vector num-keys 0))
   (set! master-hist (make-vector max-key 0))
   (set! partial-verify-vals (make-vector test-array-size 0)))
 
@@ -141,50 +108,32 @@
 (define local-hist (make-vector 0))
 
 (define (setup-threads) 
-  (let ([start 0]
-        [end 0] 
-        [remainder (remainder total-keys num-threads)]
-        [offset 0] 
-        [rstart 0]
-        [rend 0]
-        [rremainder (remainder max-key num-threads)]
-        [roffset 0] 
-        [step1-futures '()]
-        [step2-futures '()])
-    (set!
-     rankthreads
-     (list->vector
-      (for/list ([i (in-range 0 num-threads)])
-        (let ([chunk-size (quotient total-keys num-threads)]
-              [rsize (quotient max-key num-threads)])
-          (set! start (+ (* i chunk-size) offset)) 
-          (set! end (+ (- (+ (* i chunk-size) chunk-size) 1) offset))
+  (set! rankthreads (make-vector num-threads 0))
+  (let ([chunk-size (quotient total-keys num-threads)]
+        [rsize (quotient max-key num-threads)])
+
+      (for/fold ([remainder (remainder total-keys num-threads)]
+                 [offset 0] 
+                 [rremainder (remainder max-key num-threads)]
+                 [roffset 0]) 
+                ([i (in-range 0 num-threads)])
+        (define (segmenter chunk-size offset remainder)
+          (define start (+ (* i chunk-size) offset)) 
+          (define end (+ (- (+ (* i chunk-size) chunk-size) 1) offset))
           (if (> remainder 0)
-              (begin 
-                (set! remainder (- remainder 1))
-                (set! offset (+ offset 1))
-                (set! end (+ end 1)))
-              void) 
-          (set! rstart (+ (* i rsize) roffset))
-          (set! rend (+ (- (+ (* i rsize) rsize) 1) roffset)) 
-          (if (> rremainder 0)
-              (begin 
-                (set! rremainder (- rremainder 1))
-                (set! roffset (+ roffset 1))
-                (set! rend (+ rend 1)))
-              void)
-          (new-RankThread i start end rstart rend)))))
-    (set! rankthreads-local-hist (vector-map RankThread-local-hist rankthreads))))
+            (values start (- remainder 1) (+ offset 1) (+ end 1))
+            (values start remainder offset end)))
+        (define-values (start nr no end) (segmenter chunk-size offset remainder))
+        (define-values (rstart nrr nro rend) (segmenter rsize roffset rremainder))
+
+        (vs! rankthreads i (new-RankThread i start end rstart rend))
+        (values nr no nrr nro)))
+    (set! rankthreads-local-hist (vector-map RankThread-local-hist rankthreads)))
 
 ;IS code   
 (define serial #f)
 (define bid -1)
 (define amult 1220703125.0)
-
-;Subs for the IS ctor
-(define (init-is cls np ser) 
-  (init-is-base cls np ser) 
-  (set! serial ser))
 
 
 ; The benchmark entry point.
@@ -194,9 +143,9 @@
     (init-is (BMArgs-class args) 
              (BMArgs-num-threads args) 
              (BMArgs-serial args)) 
-    (run-benchmark args)))
+    (run-benchmark (BMArgs-class args) args)))
 
-(define (run-benchmark args) 
+(define (run-benchmark class args) 
   (print-banner "Integer Sort" args) 
   (printf "Size: ~a Iterations: ~a~n" total-keys max-iterations) 
   ;Generate random number sequence and subsequent keys on all procs 
@@ -205,14 +154,14 @@
   ;initialization of all data and code pages and respective tables 
   ;(print (vector-take key-array 1000))
   (if serial 
-      (rank 1) 
+      (rank class 1) 
       (begin 
         (setup-threads) 
         (do-sort 1) 
-        (partial-verify 1))) 
+        (partial-verify class 1))) 
   ;Start verification counter 
   (set! passed-verification 0) 
-  (if (not (eq? #\S CLASS))
+  (if (not (eq? #\S class))
       (printf "~n    iteration#~n")
       void) 
   ;Start timing 
@@ -223,10 +172,10 @@
                    (for ([it (in-range 1 (+ max-iterations 1))]) 
                      (printf "    Iteration ~a\n" it)
                      (if serial 
-                         (rank it) 
+                         (rank class it) 
                          (begin 
                            (do-sort it)
-                           (partial-verify it))))) 
+                           (partial-verify class it))))) 
                  '(1))])
     ;Stop timing 
     ;This tests that keys are in sequence: sorting of last 
@@ -235,12 +184,12 @@
     (let ([verified 0])
       (when (= passed-verification (+ (* 5 max-iterations) 1)) 
         (set! verified 1))
-      (print-verification-status CLASS verified "Integer Sort")
+      (print-verification-status class verified "Integer Sort")
       (let* ([tm-sec (/ real-ms 1000)]
              [results (make-BMResults "Integer Sort" 
                                       "Machine Name?" 
                                       "PLT Scheme" 
-                                      CLASS 
+                                      class
                                       total-keys 
                                       0 
                                       0 
@@ -263,15 +212,11 @@
 
 
 (define (get-mops total-time niter num-keys)  
-  (let ([mops 0.0])
-    (if (> total-time 0) 
-        (begin 
-          (set! mops (+ niter num-keys)) 
-          (set! mops (* mops (/ niter (* total-time 1000000.0)))))
-        void) 
-    mops))
+  (if (> total-time 0) 
+      (* (+ niter num-keys) (/ niter (* total-time 1000000.0)))
+      0.0))
 
-(define (rank iteration) 
+(define (rank class iteration) 
   (vs! key-array iteration iteration) 
   (vs! key-array (fx+ iteration max-iterations) (fx- max-key iteration)) 
   (let loop ([i 0])
@@ -309,16 +254,16 @@
              (fx+ (vr master-hist (fx+ i 1)) 
                   (vr master-hist i)))
         (loop (fx+ i 1)))))
-  (partial-verify iteration))
+  (partial-verify class iteration))
 
 ;; partial-verify : int -> void
-(define (partial-verify iteration) 
+(define (partial-verify class iteration) 
   (for ([i (in-range 0 test-array-size)]) 
     (let ([k (vr partial-verify-vals i)] 
           [offset iteration])
       (if (and (<= 0 k) (<= k (- num-keys 1))) 
           (begin 
-            (case CLASS 
+            (case class
               [(#\S) 
                (if (<= i 2) 
                    (set! offset iteration) 
@@ -401,16 +346,10 @@
 
 
 (define (init-keys a) 
-  (let ([x 0.0]
-        [k (/ max-key 4)])
-    (for ([i (in-range 0 num-keys)]) 
-      (set! x (randlc a)) 
-      (set! x (+ x (randlc a))) 
-      (set! x (+ x (randlc a))) 
-      (set! x (+ x (randlc a))) 
-      (vs! key-array 
-           i 
-           (inexact->exact (floor (* x k)))))))
+  (define k (/ max-key 4)) 
+  (for ([i (in-range 0 num-keys)])
+    (define x (+ (randlc a) (randlc a) (randlc a) (randlc a)))
+    (vs! key-array i (inexact->exact (floor (* x k))))))
 
 ;; step1 : void
 (define (step1 rt)
@@ -479,6 +418,4 @@
     (for ((i (in-range 0 (vector-length step2-futures))))
       (touch (vr step2-futures i)))))
 
-(define argv (current-command-line-arguments))      
-;(define argv #("NP=3" "CLASS=W"))
-(main argv)
+(main (current-command-line-arguments))
