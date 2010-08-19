@@ -25,7 +25,6 @@
 (define max-iterations 10)
 (define test-array-size 5)
 
-(define total-keys 0)
 (define max-key 0)
 (define num-buckets 0)
 (define num-keys 0)
@@ -60,6 +59,7 @@
     [(#\B) (values B-test-index-array B-test-rank-array 25 21 10)]
     [(#\C) (values C-test-index-array C-test-rank-array 27 23 10)]))
 
+(define-struct IS-Params (serial num-threads max-key num-buckets num-keys))
 ;; init-is: character boolean -> void
 (define (init-is cls np ser)
   (set! serial ser)
@@ -69,19 +69,14 @@
   ;Common variables 
   (set! test-index-array tia)
   (set! test-rank-array tra)
-  (set! total-keys (arithmetic-shift 1 total-keys-log-2))
+  (set! num-keys (arithmetic-shift 1 total-keys-log-2))
   (set! max-key (arithmetic-shift 1 max-key-log-2))
   (set! num-buckets (arithmetic-shift 1 num-buckets-log-2))
-  (set! num-keys total-keys)
   (set! key-array (make-vector num-keys 0))
   (set! master-hist (make-vector max-key 0))
   (set! partial-verify-vals (make-vector test-array-size 0)))
 
 (define-struct RankThread (id 
-                           s1 
-                           e1 
-                           s2 
-                           e2 
                            local-hist 
                            start 
                            end 
@@ -92,10 +87,6 @@
 
 (define (new-RankThread id s1 e1 s2 e2) 
   (make-RankThread id 
-                   s1 
-                   e1 
-                   s2 
-                   e2 
                    (make-vector max-key 0) 
                    s1 
                    e1 
@@ -109,10 +100,10 @@
 
 (define (setup-threads) 
   (set! rankthreads (make-vector num-threads 0))
-  (let ([chunk-size (quotient total-keys num-threads)]
+  (let ([chunk-size (quotient num-keys num-threads)]
         [rsize (quotient max-key num-threads)])
 
-      (for/fold ([remainder (remainder total-keys num-threads)]
+      (for/fold ([remainder (remainder num-keys num-threads)]
                  [offset 0] 
                  [rremainder (remainder max-key num-threads)]
                  [roffset 0]) 
@@ -133,7 +124,6 @@
 ;IS code   
 (define serial #f)
 (define bid -1)
-(define amult 1220703125.0)
 
 
 ; The benchmark entry point.
@@ -146,9 +136,18 @@
     (run-benchmark (BMArgs-class args) args)))
 
 (define (run-benchmark class args) 
+  (define amult 1220703125.0)
+  (define (init-keys a) 
+    (define k (/ max-key 4)) 
+    (for ([i (in-range 0 num-keys)])
+      (define x (+ (randlc a) (randlc a) (randlc a) (randlc a)))
+      (vs! key-array i (inexact->exact (floor (* x k))))))
+
   (print-banner "Integer Sort" args) 
-  (printf "Size: ~a Iterations: ~a~n" total-keys max-iterations) 
+  (printf "Size: ~a Iterations: ~a~n" num-keys max-iterations) 
   ;Generate random number sequence and subsequent keys on all procs 
+
+
   (init-keys amult) ;Random number gen seed 
   ;Do one iteration "free" (i.e. untimed) to guarantee 
   ;initialization of all data and code pages and respective tables 
@@ -181,6 +180,7 @@
     ;This tests that keys are in sequence: sorting of last 
     ;ranked key seq occurs here, but is an untimed operation 
     (full-verify)
+
     (let ([verified 0])
       (when (= passed-verification (+ (* 5 max-iterations) 1)) 
         (set! verified 1))
@@ -190,7 +190,7 @@
                                       "Machine Name?" 
                                       "PLT Scheme" 
                                       class
-                                      total-keys 
+                                      num-keys 
                                       0 
                                       0 
                                       max-iterations 
@@ -199,7 +199,7 @@
                                       0
                                       (get-mops tm-sec 
                                                 max-iterations 
-                                                total-keys) 
+                                                num-keys) 
                                       0 
                                       0 
                                       0 
@@ -216,90 +216,68 @@
       (* (+ niter num-keys) (/ niter (* total-time 1000000.0)))
       0.0))
 
+;NEEDS iteration max-iterations max-key test-array-size partial-verify-vals master-hist key-array
 (define (rank class iteration) 
-  (vs! key-array iteration iteration) 
-  (vs! key-array (fx+ iteration max-iterations) (fx- max-key iteration)) 
-  (let loop ([i 0])
-    (unless (fx= i test-array-size)
-      (vs! partial-verify-vals 
-           i 
-           (vr key-array (vr test-index-array i)))
-      (loop (fx+ i 1))))
-  ;Clear the work array 
-  (let loop ([i 0])
-    (unless (fx= i max-key)
-      (vs! master-hist i 0)
-      (loop (fx+ i 1))))
-  ;In this section, the keys themselves are used as their 
-  ;own indices to determine how many of each there are: their 
-  ;individual population 
   (let ([master-hist master-hist]
         [key-array key-array]
         [num-keys num-keys])
-    (let loop ([i 0])
-      (unless (fx= i num-keys)
+    (vs! key-array iteration iteration) 
+    (vs! key-array (fx+ iteration max-iterations) (fx- max-key iteration)) 
+
+    (for ([i (in-range test-array-size)])
+        (vs! partial-verify-vals i (vr key-array (vr test-index-array i))))
+    ;Clear the work array 
+    (for ([i (in-range max-key)])
+        (vs! master-hist i 0))
+    ;In this section, the keys themselves are used as their 
+    ;own indices to determine how many of each there are: their 
+    ;individual population 
+    (for ([i (in-range num-keys)])
         (let ([ki (vr key-array i)])
           (vs! master-hist 
                ki
                (fx+ (vr master-hist ki)  
-                    1))
-          (loop (fx+ i 1))))))
-  ;Now they have individual key population 
-  ;Do density to distribution conversion 
-  (let ([end (- max-key 1)])
-    (let loop ([i 0])
-      (unless (fx= i end)
-        (vs! master-hist 
-             (fx+ i 1) 
-             (fx+ (vr master-hist (fx+ i 1)) 
-                  (vr master-hist i)))
-        (loop (fx+ i 1)))))
-  (partial-verify class iteration))
+                    1))))
+            
+    ;Now they have individual key population 
+    ;Do density to distribution conversion 
+    (for/fold ([init (vr master-hist 0)]) ([i (in-range 1 (fx- max-key 1))])
+      (define sum (fx+ init (vr master-hist i)))
+      (vs! master-hist i sum)
+      sum)
+    (partial-verify class iteration)))
 
 ;; partial-verify : int -> void
 (define (partial-verify class iteration) 
   (for ([i (in-range 0 test-array-size)]) 
-    (let ([k (vr partial-verify-vals i)] 
-          [offset iteration])
+    (let ([k (vr partial-verify-vals i)])
       (if (and (<= 0 k) (<= k (- num-keys 1))) 
-          (begin 
+          (let ([offset
             (case class
               [(#\S) 
                (if (<= i 2) 
-                   (set! offset iteration) 
-                   (set! offset (- 0 iteration)))]
+                   iteration
+                   (- 0 iteration))]
               [(#\W) 
                (if (< i 2) 
-                   (set! offset (- iteration 2)) 
-                   (set! offset (- 0 iteration)))]
+                   (- iteration 2)
+                   (- 0 iteration))]
               [(#\A) 
                (if (<= i 2) 
-                   (set! offset (- iteration 1)) 
-                   (set! offset (+ (- 0 iteration) 1)))]
+                   (- iteration 1)
+                   (+ (- 0 iteration) 1))]
               [(#\B) 
                (if (or (= i 1) (= i 2) (= i 4)) 
-                   (set! offset iteration) 
-                   (set! offset (- 0 iteration)))]
+                   iteration
+                   (- 0 iteration))]
               [(#\C) 
                (if (<= i 2) 
-                   (set! offset iteration) 
-                   (set! offset (- 0 iteration)))])
+                   iteration
+                   (- 0 iteration))])])
             (if (not (= (vr master-hist (- k 1)) 
                         (+ (vr test-rank-array i) offset)))
                 (begin 
-                  (printf "Failed partial verification: iteration~a, test key ~a~n" 
-                          iteration 
-                          i) 
-                  #;(printf "Expected ~a at master-hist[~a], but got ~a instead~n" 
-                            (+ (vr test-rank-array i) offset) 
-                            (- k 1) 
-                            (vr master-hist (- k 1)))
-                  #;(if (> (vector-count (λ (x) (= x (- k 1))) key-array) 0) 
-                        (printf "~a is in the original key array.~n" (- k 1)) 
-                        (printf "~a is NOT in the original key array.~n" (- k 1)))
-                  #;(printf "Surround: ~a~n" 
-                            (for/list ([n (in-range (- k 6) (+ k 5))]) 
-                              (vr master-hist n))))
+                  (printf "Failed partial verification: iteration~a, test key ~a~n" iteration i))
                 (set! passed-verification (+ passed-verification 1))))
           void))))
 
@@ -345,38 +323,30 @@
 
 
 
-(define (init-keys a) 
-  (define k (/ max-key 4)) 
-  (for ([i (in-range 0 num-keys)])
-    (define x (+ (randlc a) (randlc a) (randlc a) (randlc a)))
-    (vs! key-array i (inexact->exact (floor (* x k))))))
-
 ;; step1 : void
 (define (step1 rt)
   (let ([local-hist (RankThread-local-hist rt)]
         [start (RankThread-start rt)] 
         [end (RankThread-end rt)]
         [key-array key-array])   ;; make this reference faster
-    (let loop ([i 0])
-      (unless (fx= i max-key)
-        (vs! local-hist i 0)
-        (loop (fx+ i 1)))) 
-    (let loop ([i start])
-      (when (fx<= i end)
+    (for ([i (in-range max-key)])
+        (vs! local-hist i 0))
+    ;In this section, the keys themselves are used as their 
+    ;own indices to determine how many of each there are: their 
+    ;individual population 
+    (for ([i (in-range start (fx+ end 1))])
         (let ([ki (vr key-array i)])
           (vs! local-hist 
                ki
-               (fx+ (vr local-hist ki) 1))
-          (loop (fx+ i 1)))))
-    (let ([end (- max-key 1)])
-      (let loop ([i 0])
-        (unless (fx= i end)
-          (vs! local-hist 
-               (fx+ i 1) 
-               (fx+ (vr local-hist (fx+ i 1)) 
-                    (vr local-hist i)))
-          (loop (fx+ i 1)))))))
-
+               (fx+ (vr local-hist ki)  
+                    1))))
+            
+    ;Now they have individual key population 
+    ;Do density to distribution conversion 
+    (for/fold ([init (vr local-hist 0)]) ([i (in-range 1 (fx- max-key 1))])
+      (define sum (fx+ init (vr local-hist i)))
+      (vs! local-hist i sum)
+      sum)))
 
 ;Parallel calculation of the master's histogram
 (define (step2 rt) 
@@ -384,22 +354,18 @@
         [rstart (RankThread-rstart rt)] 
         [rend (RankThread-rend rt)])
     
-    (let loop ([i rstart])
-      (when (fx<= i rend)
-        (let loop ([j 0])
-          (unless (fx= j num-threads)
-            (vs! master-hist 
-                 i 
-                 (fx+
-                  (vr master-hist i) 
-                  (vr (vr rankthreads-local-hist j) i)))
-            (loop (fx+ j 1))))
-        (loop (fx+ i 1))))))
+    (for ([i (in-range rstart (fx+ rend 1))])
+      (vs! master-hist 
+           i 
+           (fx+
+             (vr master-hist i) 
+             (for/fold ([accum 0]) ([j (in-range num-threads)])
+               (fx+ accum (vr (vr rankthreads-local-hist j) i))))))))
 
 (define (do-sort iteration) 
   (vs! key-array iteration iteration)
   (vs! key-array (fx+ iteration max-iterations) (fx- max-key iteration))
-  (for ([i (in-range 0 test-array-size)])
+  (for ([i (in-range test-array-size)])
     (vs! partial-verify-vals i (vr key-array (vr test-index-array i))))
   (let ([step1-futures (vector-map (λ (rthread) 
                                      (future (λ () 
