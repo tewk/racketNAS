@@ -143,6 +143,15 @@
       (define x (+ (randlc a) (randlc a) (randlc a) (randlc a)))
       (vs! key-array i (inexact->exact (floor (* x k))))))
 
+
+  (define (prep-iteration iteration)
+    (vs! key-array iteration iteration) 
+    (vs! key-array (fx+ iteration max-iterations) (fx- max-key iteration)) 
+    (for ([i (in-range test-array-size)])
+      (vs! partial-verify-vals i (vr key-array (vr test-index-array i)))))
+
+
+
   (print-banner "Integer Sort" args) 
   (printf "Size: ~a Iterations: ~a~n" num-keys max-iterations) 
   ;Generate random number sequence and subsequent keys on all procs 
@@ -152,12 +161,15 @@
   ;Do one iteration "free" (i.e. untimed) to guarantee 
   ;initialization of all data and code pages and respective tables 
   ;(print (vector-take key-array 1000))
+
+  (prep-iteration 1)
   (if serial 
-      (rank class 1) 
+      (serial-sort) 
       (begin 
         (setup-threads) 
-        (do-sort 1) 
-        (partial-verify class 1))) 
+        (do-sort)))
+  (partial-verify class 1) 
+
   ;Start verification counter 
   (set! passed-verification 0) 
   (if (not (eq? #\S class))
@@ -170,11 +182,11 @@
                  (λ (x)
                    (for ([it (in-range 1 (+ max-iterations 1))]) 
                      (printf "    Iteration ~a\n" it)
+                     (prep-iteration it)
                      (if serial 
-                         (rank class it) 
-                         (begin 
-                           (do-sort it)
-                           (partial-verify class it))))) 
+                         (serial-sort) 
+                         (do-sort))
+                     (partial-verify class it)))
                  '(1))])
     ;Stop timing 
     ;This tests that keys are in sequence: sorting of last 
@@ -216,16 +228,11 @@
       (* (+ niter num-keys) (/ niter (* total-time 1000000.0)))
       0.0))
 
-;NEEDS iteration max-iterations max-key test-array-size partial-verify-vals master-hist key-array
-(define (rank class iteration) 
+;NEEDS max-key master-hist key-array num-keys
+(define (serial-sort) 
   (let ([master-hist master-hist]
         [key-array key-array]
         [num-keys num-keys])
-    (vs! key-array iteration iteration) 
-    (vs! key-array (fx+ iteration max-iterations) (fx- max-key iteration)) 
-
-    (for ([i (in-range test-array-size)])
-        (vs! partial-verify-vals i (vr key-array (vr test-index-array i))))
     ;Clear the work array 
     (for ([i (in-range max-key)])
         (vs! master-hist i 0))
@@ -233,21 +240,17 @@
     ;own indices to determine how many of each there are: their 
     ;individual population 
     (for ([i (in-range num-keys)])
-        (let ([ki (vr key-array i)])
-          (vs! master-hist 
-               ki
-               (fx+ (vr master-hist ki)  
-                    1))))
+        (v++! master-hist (vr key-array i)))
             
     ;Now they have individual key population 
     ;Do density to distribution conversion 
     (for/fold ([init (vr master-hist 0)]) ([i (in-range 1 (fx- max-key 1))])
       (define sum (fx+ init (vr master-hist i)))
       (vs! master-hist i sum)
-      sum)
-    (partial-verify class iteration)))
+      sum)))
 
 ;; partial-verify : int -> void
+;; deps test-array-size partial-verify-vals num-keys master-hist test-rank-array
 (define (partial-verify class iteration) 
   (for ([i (in-range 0 test-array-size)]) 
     (let ([k (vr partial-verify-vals i)])
@@ -295,11 +298,15 @@
       (vs! key-array idx key)
       (set! idx (+ idx 1)))
     
-    (let ([count 0])
-      (for ([i (in-range 1 num-keys)])
-        (when (> (vr key-array (- i 1))
-                 (vr key-array i))
-          (set! count (+ count 1))))
+    (let-values ([(prev count)
+        (for/fold ([prev (vr key-array 0)]
+                 [count 0])
+                 ([i (in-range 1 num-keys)])
+          (let ([curr (vr key-array i)])
+            (values curr 
+                    (if (prev . > . curr)
+                        (fx+ count 1)
+                        count))))])
       (if (= count 0)
           (set! passed-verification (+ passed-verification 1))
           (printf "Full_verify: number of keys out of sort: ~s\n" count)))))
@@ -322,8 +329,11 @@
         (set! idx (+ idx 1)))))
 
 
+(define-syntax-rule (v++! v idx)
+  (vs! v idx (fx+ (vr v idx) 1)))
 
 ;; step1 : void
+;; deps max-key local-hist start end key-array 
 (define (step1 rt)
   (let ([local-hist (RankThread-local-hist rt)]
         [start (RankThread-start rt)] 
@@ -335,11 +345,7 @@
     ;own indices to determine how many of each there are: their 
     ;individual population 
     (for ([i (in-range start (fx+ end 1))])
-        (let ([ki (vr key-array i)])
-          (vs! local-hist 
-               ki
-               (fx+ (vr local-hist ki)  
-                    1))))
+        (v++! local-hist (vr key-array i)))
             
     ;Now they have individual key population 
     ;Do density to distribution conversion 
@@ -349,6 +355,7 @@
       sum)))
 
 ;Parallel calculation of the master's histogram
+;; deps num-threads local-hist rstart rend
 (define (step2 rt) 
   (let ([local-hist (RankThread-local-hist rt)] 
         [rstart (RankThread-rstart rt)] 
@@ -357,31 +364,16 @@
     (for ([i (in-range rstart (fx+ rend 1))])
       (vs! master-hist 
            i 
-           (fx+
-             (vr master-hist i) 
-             (for/fold ([accum 0]) ([j (in-range num-threads)])
-               (fx+ accum (vr (vr rankthreads-local-hist j) i))))))))
+           (for/fold ([accum 0]) ([j (in-range num-threads)])
+             (fx+ accum (vr (vr rankthreads-local-hist j) i)))))))
 
-(define (do-sort iteration) 
-  (vs! key-array iteration iteration)
-  (vs! key-array (fx+ iteration max-iterations) (fx- max-key iteration))
-  (for ([i (in-range test-array-size)])
-    (vs! partial-verify-vals i (vr key-array (vr test-index-array i))))
-  (let ([step1-futures (vector-map (λ (rthread) 
-                                     (future (λ () 
-                                               (step1 rthread))))
-                                   rankthreads)])
-    (for ((i (in-range 0 (vector-length step1-futures))))
-      (touch (vr step1-futures i))))
-  (let loop ([i 0])
-    (unless (fx= i max-key)
-      (vs! master-hist i 0)
-      (loop (fx+ i 1))))
-  (let ([step2-futures (vector-map (λ (rthread) 
-                                     (future (λ () 
-                                               (step2 rthread))))
-                                   rankthreads)]) 
-    (for ((i (in-range 0 (vector-length step2-futures))))
-      (touch (vr step2-futures i)))))
+(define-syntax-rule (future-pmap/vector func v)
+  (let ([fs (vector-map (λ (x) (future (λ () (func x)))) v)])
+    (for ((i (in-range (vector-length fs))))
+      (touch (vr fs i)))))
+  
+(define (do-sort) 
+  (future-pmap/vector step1 rankthreads)
+  (future-pmap/vector step2 rankthreads))
 
 (main (current-command-line-arguments))
