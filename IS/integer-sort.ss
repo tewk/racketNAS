@@ -1,12 +1,14 @@
 #lang racket 
 
-(provide main)
 (require racket/future)
 (require racket/vector)
 (require "../bm-args.ss")
 (require "../bm-results.ss")
 (require "../rand-generator.ss")
+(require "places-mpi.ss")
 
+(provide main
+         sort-start-worker)
 
 ;; safe primitives
 
@@ -128,8 +130,10 @@
 
 ; The benchmark entry point.
 ;;main : list-of-string -> void
-(define (main argv) 
-  (let ([args (parse-cmd-line-args argv "Integer Sort")])
+(define (main) 
+  (let ([args (parse-cmd-line-args (list "CLASS=W" "NP=2")  "Integer Sort")])
+;(define (main argv) 
+;  (let ([args (parse-cmd-line-args argv "Integer Sort")])
     (init-is (BMArgs-class args) 
              (BMArgs-num-threads args) 
              (BMArgs-serial args)) 
@@ -150,7 +154,9 @@
     (for ([i (in-range test-array-size)])
       (vs! partial-verify-vals i (vr key-array (vr test-index-array i)))))
 
-
+  (define places (for/list ([i (in-range 1 8)]) (place "integer-sort.ss" 'sort-start-worker)))
+  (define comgrp (build-hypercube-comgrp 8 places))
+  (broadcast comgrp (list max-key (add1 max-iterations)))
 
   (print-banner "Integer Sort" args) 
   (printf "Size: ~a Iterations: ~a~n" num-keys max-iterations) 
@@ -167,7 +173,8 @@
       (serial-sort) 
       (begin 
         (setup-threads) 
-        (do-sort)))
+        ;(do-sort)))
+        (set! master-hist (places-sort comgrp key-array max-key))))
   (partial-verify class 1) 
 
   ;Start verification counter 
@@ -185,7 +192,8 @@
                      (prep-iteration it)
                      (if serial 
                          (serial-sort) 
-                         (do-sort))
+                         ;(do-sort))
+                         (set! master-hist (places-sort comgrp key-array max-key)))
                      (partial-verify class it)))
                  '(1))])
     ;Stop timing 
@@ -376,4 +384,28 @@
   (future-pmap/vector step1 rankthreads)
   (future-pmap/vector step2 rankthreads))
 
-(main (current-command-line-arguments))
+
+(define (places-sort comgrp key-array max-key)
+  (sort-worker comgrp (scatter comgrp key-array) max-key))
+
+(define (sort-start-worker ch)
+  (define comgrp (receive-hypercube-comgrp ch))
+  (match (broadcast comgrp)
+    [(list max-key its)
+      (for ([i (in-range its)])
+        (sort-worker comgrp (scatter comgrp) max-key))]))
+
+(define (sort-worker comgrp key-array max-key)
+  (define local-hist (make-vector max-key 0))
+  
+  (for ([i (in-range (vector-length key-array))])
+    (v++! local-hist (vr key-array i)))
+
+  (for/fold ([init (vr local-hist 0)]) ([i (in-range 1 (fx- max-key 1))])
+    (define sum (fx+ init (vr local-hist i)))
+    (vs! local-hist i sum)
+    sum)
+
+  (reduce/vector comgrp + 0 local-hist))
+
+;(main (current-command-line-arguments))
