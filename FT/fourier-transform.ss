@@ -303,6 +303,42 @@
         (when0
             (calculate-checksum checksum (fx+ REAL (fx* it isize2)) it xnt ny nz nx)))))))
 
+(define-syntax-rule (swarztrauber-worker is n exponent block-start block-end l j x jsize1 scr lk li kbt-offset1 kbt-offset1o kbt-offset2)
+  (let* ([n1 (fxquotient n 2)]
+;         [lk lk]
+;         [li li]
+         [lj (fx* 2 lk)]
+         [ku li]) 
+    (for ([i (in-range li)]) 
+      (let* ([i11 (fx* i lk)]
+             [i12 (fx+ i11 n1)]
+             [i21 (fx* i lj)]
+             [i22 (fx+ i21 lk)]
+             [kbt-idx (fx* (fx+ ku i) 2)]
+             [u1-REAL (flvector-ref exponent (fx+ REAL kbt-idx))]
+             [u1-IMAG (fl* is (flvector-ref exponent (fx+ IMAG kbt-idx)))])
+        (for ([k (in-range lk)]) 
+          (for ([j (in-range block-start (fx+ block-end 1))]) 
+            (let* (;[kbt-offset1 kbt-offset1]
+;                   [kbt-offset1o kbt-offset1o]
+;                   [kbt-offset2 kbt-offset2]
+                   [kbt-REALoff (fx+ REAL kbt-offset1)]
+                   [kbt-IMAGoff (fx+ IMAG kbt-offset1)]
+                   [i11-k-jsize1 (fx* (fx+ i11 k) jsize1)]
+                   [i12-k-jsize1 (fx* (fx+ i12 k) jsize1)])
+              (let ([x11-REAL (flvector-ref x (fx+ i11-k-jsize1 kbt-REALoff))]
+                    [x11-IMAG (flvector-ref x (fx+ i11-k-jsize1 kbt-IMAGoff))]
+                    [x21-REAL (flvector-ref x (fx+ i12-k-jsize1 kbt-REALoff))]
+                    [x21-IMAG (flvector-ref x (fx+ i12-k-jsize1 kbt-IMAGoff))])
+                (let ([j-isize-i21-k-jsize (fx+ kbt-offset1o (fx* (fx+ i21 k) jsize1))])
+                   (flvector-set! scr (fx+ REAL j-isize-i21-k-jsize) (fl+ x11-REAL x21-REAL))
+                   (flvector-set! scr (fx+ IMAG j-isize-i21-k-jsize) (fl+ x11-IMAG x21-IMAG)))
+                (let ([j-2-i22-k-jsize1 (fx+ kbt-offset2 (fx* (fx+ i22 k) jsize1))]
+                      [x11-x21-REAL (fl- x11-REAL x21-REAL)]
+                      [x11-x21-IMAG (fl- x11-IMAG x21-IMAG)])
+                   (flvector-set! scr (fx+ REAL j-2-i22-k-jsize1) (fl- (fl* u1-REAL x11-x21-REAL) (fl* u1-IMAG x11-x21-IMAG)))
+                   (flvector-set! scr (fx+ IMAG j-2-i22-k-jsize1) (fl+ (fl* u1-IMAG x11-x21-REAL) (fl* u1-REAL x11-x21-IMAG))))))))))))
+
 ;;swarztrauber : int int int int vector-of-double int int vector-of-double vector-of-double -> void
 (define (swarztrauber is m len n x xoffset xd1 exponent scr)
   (define fftblock-default (fx* 4 4096)) ;Size of L1 cache on SGI 02K
@@ -315,86 +351,28 @@
         (let ([block-end (fxmin (fx- (fx+ block-start fftblock) 1) (fx- len 1))])
           (for ([l (in-range 1 (fx+ m 1) 2)]) 
 
-            (let* ([n1 (fxquotient n 2)]
-                   [lk (fxlshift 1 (fx- l 1))]
-                   [li (fxlshift 1 (fx- m l))]
-                   [lj (fx* 2 lk)]
-                   [ku li]) 
-              (for ([i (in-range li)]) 
-                (let* ([i11 (fx* i lk)]
-                       [i12 (fx+ i11 n1)]
-                       [i21 (fx* i lj)]
-                       [i22 (fx+ i21 lk)]
-                       [kbt-idx (fx* (fx+ ku i) 2)]
-                       [u1-REAL (flvector-ref exponent (fx+ REAL kbt-idx))]
-                       [u1-IMAG (fl* is (flvector-ref exponent (fx+ IMAG kbt-idx)))])
-                  (for ([k (in-range lk)]) 
-                    (for ([j (in-range block-start (fx+ block-end 1))]) 
-                      (let* ([kbt-offset1  (fx+ (fx* j 2) xoffset)]
-                             [kbt-offset1o (fx* j isize1)]
-                             [kbt-offset2  (fx* j 2)]
-                             [kbt-REALoff (fx+ REAL kbt-offset1)]
-                             [kbt-IMAGoff (fx+ IMAG kbt-offset1)]
-                             [i11-k-jsize1 (fx* (fx+ i11 k) jsize1)]
-                             [i12-k-jsize1 (fx* (fx+ i12 k) jsize1)])
-                        (let ([x11-REAL (flvector-ref x (fx+ i11-k-jsize1 kbt-REALoff))]
-                              [x11-IMAG (flvector-ref x (fx+ i11-k-jsize1 kbt-IMAGoff))]
-                              [x21-REAL (flvector-ref x (fx+ i12-k-jsize1 kbt-REALoff))]
-                              [x21-IMAG (flvector-ref x (fx+ i12-k-jsize1 kbt-IMAGoff))])
-                          (let ([j-isize-i21-k-jsize (fx+ kbt-offset1o (fx* (fx+ i21 k) jsize1))])
-                             (flvector-set! scr (fx+ REAL j-isize-i21-k-jsize) (fl+ x11-REAL x21-REAL))
-                             (flvector-set! scr (fx+ IMAG j-isize-i21-k-jsize) (fl+ x11-IMAG x21-IMAG)))
-                          (let ([j-2-i22-k-jsize1 (fx+ kbt-offset2 (fx* (fx+ i22 k) jsize1))]
-                                [x11-x21-REAL (fl- x11-REAL x21-REAL)]
-                                [x11-x21-IMAG (fl- x11-IMAG x21-IMAG)])
-                             (flvector-set! scr (fx+ REAL j-2-i22-k-jsize1) (fl- (fl* u1-REAL x11-x21-REAL) (fl* u1-IMAG x11-x21-IMAG)))
-                             (flvector-set! scr (fx+ IMAG j-2-i22-k-jsize1) (fl+ (fl* u1-IMAG x11-x21-REAL) (fl* u1-REAL x11-x21-IMAG)))))))))))
+            (swarztrauber-worker is n exponent block-start block-end l j x jsize1 scr
+              (fxlshift 1 (fx- l 1))
+              (fxlshift 1 (fx- m l)) 
+              (fx+ (fx* j 2) xoffset) 
+              (fx* j isize1)
+              (fx* j 2))
 
             (if (fx= l m) 
-                (for ([k (in-range n)]) 
-                  (for ([j (in-range block-start (fx+ block-end 1))]) 
-                    (let ([dest-off (fx+ (fx+ (fx* j 2) (fx* k jsize1)) xoffset)]
-                          [src-off  (fx+ (fx* j isize1) (fx* k jsize1))])
-                      (flvector-set! x (fx+ REAL dest-off) (flvector-ref scr (fx+ REAL src-off)))
-                      (flvector-set! x (fx+ IMAG dest-off) (flvector-ref scr (fx+ IMAG src-off))))))
+              (for ([k (in-range n)]) 
+                (for ([j (in-range block-start (fx+ block-end 1))]) 
+                  (let ([dest-off (fx+ (fx+ (fx* j 2) (fx* k jsize1)) xoffset)]
+                        [src-off  (fx+ (fx* j isize1) (fx* k jsize1))])
+                    (flvector-set! x (fx+ REAL dest-off) (flvector-ref scr (fx+ REAL src-off)))
+                    (flvector-set! x (fx+ IMAG dest-off) (flvector-ref scr (fx+ IMAG src-off))))))
 
-              (let* ([n1 (fxquotient n 2)]
-                     [lk (fxlshift 1 l)]
-                     [li (fxlshift 1 (fx- (fx- m l) 1))]
-                     [lj (fx* 2 lk)]
-                     [ku li]) 
-                (for ([i (in-range li)]) 
-                  (let* ([i11 (fx* i lk)]
-                         [i12 (fx+ i11 n1)]
-                         [i21 (fx* i lj)]
-                         [i22 (fx+ i21 lk)]
-                         [kbt-idx (fx* (fx+ ku i) 2)]
-                         [u1-REAL (flvector-ref exponent (fx+ REAL kbt-idx))]
-                         [u1-IMAG (fl* is (flvector-ref exponent (fx+ IMAG kbt-idx)))])
-                    (for ([k (in-range lk)]) 
-                      (for ([j (in-range block-start (fx+ block-end 1))]) 
-
-                        ;(printf "j ~a 2 xoffset ~a i21 ~a k ~a jsize ~a ~n" j xoffset i21 k jsize1)
-                        (let* ([kbt-offset1  (fx* j isize1)]
-                               [kbt-offset1o (fx+ (fx* j 2) xoffset)]
-                               [kbt-offset2  (fx+ (fx* j 2) xoffset)]
-                               [kbt-REALoff (fx+ REAL kbt-offset1)]
-                               [kbt-IMAGoff (fx+ IMAG kbt-offset1)]
-                               [i11-k-jsize1 (fx* (fx+ i11 k) jsize1)]
-                               [i12-k-jsize1 (fx* (fx+ i12 k) jsize1)])
-                          (let ([x11-REAL (flvector-ref scr (fx+ i11-k-jsize1 kbt-REALoff))]
-                                [x11-IMAG (flvector-ref scr (fx+ i11-k-jsize1 kbt-IMAGoff))]
-                                [x21-REAL (flvector-ref scr (fx+ i12-k-jsize1 kbt-REALoff))]
-                                [x21-IMAG (flvector-ref scr (fx+ i12-k-jsize1 kbt-IMAGoff))])
-                            (let ([j-isize-i21-k-jsize (fx+ kbt-offset1o (fx* (fx+ i21 k) jsize1))])
-                               (flvector-set! x (fx+ REAL j-isize-i21-k-jsize) (fl+ x11-REAL x21-REAL))
-                               (flvector-set! x (fx+ IMAG j-isize-i21-k-jsize) (fl+ x11-IMAG x21-IMAG)))
-                            (let ([j-2-i22-k-jsize1 (fx+ kbt-offset2 (fx* (fx+ i22 k) jsize1))]
-                                  [x11-x21-REAL (fl- x11-REAL x21-REAL)]
-                                  [x11-x21-IMAG (fl- x11-IMAG x21-IMAG)])
-                               (flvector-set! x (fx+ REAL j-2-i22-k-jsize1) (fl- (fl* u1-REAL x11-x21-REAL) (fl* u1-IMAG x11-x21-IMAG)))
-                               (flvector-set! x (fx+ IMAG j-2-i22-k-jsize1) (fl+ (fl* u1-IMAG x11-x21-REAL) (fl* u1-REAL x11-x21-IMAG)))))))))))
-  ))))))))
+              (swarztrauber-worker is n exponent block-start block-end l j scr jsize1 x
+                (fxlshift 1 l) 
+                (fxlshift 1 (fx- (fx- m l) 1)) 
+                (fx* j isize1) 
+                (fx+ (fx* j 2) xoffset) 
+                (fx+ (fx* j 2) xoffset)))
+  )))))))
 
 (define (get-mflops total-time nx ny nz) 0)
 (define (print-timers) 0)
