@@ -1,5 +1,9 @@
 #lang racket 
 
+;; racket -tm integer-sort.rkt SERIAL CLASS=S
+;; racket -tm integer-sort.rkt FUTURES CLASS=S NP=2
+;; racket -tm integer-sort.rkt PLACES  CLASS=S NP=2
+
 (require racket/future)
 (require racket/vector)
 (require "../bm-args.ss")
