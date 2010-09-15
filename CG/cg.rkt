@@ -12,10 +12,11 @@
 (require racket/math)
 (require racket/place)
 (require racket/place-utils)
+(require (for-syntax scheme/base))
 
-#;(require scheme/fixnum scheme/flonum)
+(require scheme/fixnum scheme/flonum)
 
-(require (only-in scheme/flonum make-flvector make-shared-flvector)
+#;(require (only-in scheme/flonum make-flvector make-shared-flvector)
          scheme/require (for-syntax scheme/base)
    (filtered-in
     (lambda (name) (regexp-replace #rx"unsafe-" name ""))
@@ -117,6 +118,8 @@
 (define make-fxvector make-vector)
 (define vr vector-ref)
 (define vs! vector-set!)
+(define flvs! flvector-set!)
+(define flvr flvector-ref)
 
 (define (run-benchmark args) 
   (let ([bmname "FT"]
@@ -153,8 +156,8 @@
           (for/fold ([tnorm1 0.0]
                    [tnorm2 0.0])
                   ([j (in-range 1 (add1 (add1 (- lastcol firstcol))))])
-            (let ([zj (vr z j)])
-              (values (+ tnorm1 (* (vr x j) zj))
+            (let ([zj (flvr z j)])
+              (values (+ tnorm1 (* (flvr x j) zj))
                       (+ tnorm2 (* zj zj)))))])
           (values tnorm1 (/ 1.0 (sqrt tnorm2)))))
 
@@ -167,21 +170,21 @@
              [k (in-range (vr rowstr j) (vr rowstr (add1 j)))])
         (vs! colidx k (add1 (- (vr colidx k) firstcol))))
 
-      (for ([i (in-range 1 (+ na 2))]) (vs! x i 1.0))
+      (for ([i (in-range 1 (+ na 2))]) (flvs! x i 1.0))
       
-      (let ([rnorm (conj-grad colidx rowstr x z a p q r 0.0)])
+      (let ([rnorm (conj-grad firstrow lastrow firstcol lastcol naa colidx rowstr x z a p q r 0.0)])
         (let-values ([(tnorm1 tnorm2) (tnorms)])
           (for ([j (in-range 1 (add1 (add1 (- lastcol firstcol))))])
-            (vs! x j (* tnorm1 (vr z j)))))
+            (flvs! x j (* tnorm1 (flvr z j)))))
 
-        (for ([i (in-range 1 (+ na 2))]) (vs! x i 1.0))
+        (for ([i (in-range 1 (+ na 2))]) (flvs! x i 1.0))
 
         (let-values ([(rnorm zeta)
             (for/fold ([rnorm rnorm]
-                       [z 0.0]) ([it (in-range niter)])
+                       [zzeta 0.0]) ([it (in-range niter)])
               (let ([norm 
                 (if serial 
-                  (conj-grad colidx rowstr x z a p q r rnorm)
+                  (conj-grad firstrow lastrow firstcol lastcol naa colidx rowstr x z a p q r rnorm)
                   (let ()
                     ;(execute-task 3)
                     (define rho0 (for/fold ([rho 0.0]) ([m (in-range num-threads)])
@@ -208,10 +211,10 @@
                 (define zeta (+ shift (/ 1.0 tnorm1)))
                 (printf "    ~a       ~a          ~a~n" it rnorm zeta)
                 (for ([j (in-range 1 (add1 (add1 (- lastcol firstcol))))])
-                  (vs! x j (* tnorm2 (vr z j))))
+                  (flvs! x j (* tnorm2 (flvr z j))))
                 (values rnorm zeta)))])
 
-          (let ([verified (verify zeta)])
+          (let ([verified (verify zeta zeta-verify-value)])
             (print-banner "Conjugate Gradient" args) 
             (printf "Size = ~a X ~a X ~a niter = ~a~n" na 0 0 niter) 
             (if serial 
@@ -222,7 +225,7 @@
                 (printf "Verification failed~n"))
             (let* ([time (/ (read-timer 1) 1000)]
                    [results (new-BMResults bmname CLASS na 0 0  niter time 
-                                           (get-mflops time niter)
+                                           (get-mflops na nonzer time niter)
                                            "floating point" 
                                            (if verified 1 0)
                                            serial 
@@ -256,7 +259,7 @@
 ;//       iv, arow, acol i
 ;//       v, aelt        r*8
 ;//---------------------------------------------------------------------
-(define (makea n nz a colidx rowstr nonzer rcond arow acol aelt v iv shift)
+(define (makea firstrow lastrow firstcol lastcol n nz a colidx rowstr nonzer rcond arow acol aelt v iv shift)
   (define (warn nnza nz iouter)
     (printf "Space for matrix elements exceeded in makea~n")
     (printf "nnza, nzmax = ~a, ~a~n" nnza nz)
@@ -267,39 +270,44 @@
 
   (let-values ([(size nnza)
     (for/fold ([size 1.0]
-             [nnza 0]) ([ioutger  (in-range 1 (add1 n))])
-      (sprnvc n nonzer v iv colidx o colidx n)
+               [nnza 0]) ([iouter  (in-range 1 (add1 n))])
+      (sprnvc n nonzer v iv colidx 0 colidx n)
       (let ([nzv (vecset n v iv nonzer iouter 0.5)])
 
       (for ([ivelt (in-range 1 (add1 nzv))])
         (define jcol (vr iv ivelt))
-        (if (and (jcol . >= . firstcol) (jcol . <= . lastcol))
+        (when (and (jcol . >= . firstcol) (jcol . <= . lastcol))
           (begin
             (for/fold ([nnza nnza]) ([ivelt1 (in-range 1 (add1 nzv))])
               (define irow (vr iv ivelt1))
               (if (and (irow . >= . firstrow) (irow . <= . lastrow))
                 (let ([nnza (add1 nnza)])
-                  (define scale (* size (vr v ivelt)))
+                  (define scale (* size (flvr v ivelt)))
                   (when (nnza . > . nz) (warn nnza nz iouter))
                   (vs! acol nnza jcol)
                   (vs! arow nnza irow)
-                  (vs! aelt nnza (* (vr v vetl1) scale))
+                  (flvs! aelt nnza (* (flvr v ivelt1) scale))
                   nnza)
                 nnza)))))
       (values (* size ratio) nnza)))])
     
     (let ([nnza (for/fold ([nnza nnza]) ([i (in-range firstrow (add1 lastrow))])
-      (when (and (i . >= . firstcol) (i . <= . lastcol))
-        (define iouter (+ n i))
-        (define nnza (add1 nnza))
-        (when (nnza . > . nz) (warn nnza nz iouter))
-        (vs! acol nnza i)
-        (vs! arow nnza i)
-        (vs! aelt nnza (- rcond shift))))])
-
-      (sparse a colidx rowstr n arow acol aelt v iv 0 iv n nnza))))
+      (if (and (i . >= . firstcol) (i . <= . lastcol))
+        (let ([nnza (add1 nnza)])
+          (define iouter (+ n i))
+          (when (nnza . > . nz) (warn nnza nz iouter))
+          (vs! acol nnza i)
+          (vs! arow nnza i)
+          (flvs! aelt nnza (- rcond shift))
+          nnza)
+        nnza))])
+      (sparse firstrow lastrow a colidx rowstr n arow acol aelt v iv 0 iv n nnza))))
 
 (define (sprnvc n nz v iv nzloc nzloc-offset mark mark-offset)
+  (define-syntax-rule (vr1 a v i)
+    (begin
+      (when (inexact? i) (printf "inexact ~a\n" a))
+      (vector-ref v i)))
   (define nn1 (ilog2 n))
 
   (let loop ([nzv 0]
@@ -307,38 +315,40 @@
              [idx 0])
     (if ( nzv . >= . nz )
       (for ([ii (in-range 1 (add1 nzrow))])
-        (vs! mark (+ (vr nzloc (+ ii nzloc-offset)) mark-offset) 0))
-      (let ([vecelt (randlc amult)]
+        (vs! mark (+ (vr1 "1" nzloc (+ ii nzloc-offset)) mark-offset) 0))
+      (let* ([vecelt (randlc amult)]
             [vecloc (randlc amult)]
-            [idx (floor (add1 (* vecloc nn1)))])
+            [idx (inexact->exact (floor (add1 (* vecloc nn1))))])
         (if (idx . > . n)
           (loop nzv nzrow idx)
-          (if (zero? (vr mark (+ idx mark-offset)))
-            (let ([nzloc (add1 nzloc)]
+          (if (zero? (vr1 "2" mark (+ idx mark-offset)))
+            (let ([nzrow (add1 nzrow)]
                   [nzv (add1 nzv)])
               (vs! mark (+ idx mark-offset) 1)
-              (vs! nzloc nzrow + nzloc-offset)
-              (vs! v nzv vecelt)
+              (vs! nzloc nzrow (+ nzrow nzloc-offset))
+              (flvs! v nzv vecelt)
               (vs! iv nzv idx)
               (loop nzv nzrow idx))
             (loop nzv nzrow idx)))))))
 
 (define (vecset n v iv nzv ival val)
-  (if (not (for/fold ([set #f]) ([i (in-range 1 (add1 nzv))])
+  (if (not (for/fold ([set #f]) ([k (in-range 1 (add1 nzv))])
               (if (= (vr iv k) ival)
                 (begin 
-                  (vs! v k val)
+                  (flvs! v k val)
                   #t)
                 set)))
     (let ([nzv (add1 nzv)])
-      (vs! v nzv val)
+      (flvs! v nzv val)
       (vs! iv nzv ival)
       nzv)
     nzv))
 
-(define-syntax-rule (vs!++ v i val) (vs! v i (add1 (vr v i))))
+(define-syntax-rule (vs!++ v i) (vs! v i (add1 (vr v i))))
+(define-syntax-rule (flvs!+ v i val) (flvs! v i (+ (flvr v i) val)))
+(define-syntax-rule (flvs!- v i val) (flvs! v i (- (flvr v i) val)))
 
-(define (sparse a colidx rowstr n arow acol aelt x mark mark-offset nzloc nzloc-offset nnza)
+(define (sparse firstrow lastrow a colidx rowstr n arow acol aelt x mark mark-offset nzloc nzloc-offset nnza)
   (define nrows (add1 (- lastrow firstrow)))
   (for ([j (in-range 1 (add1 n))])
     (vs! rowstr j 0)
@@ -346,7 +356,7 @@
   (vs! rowstr (add1 n) 0)
 
   (for ([nza (in-range 1 (add1 nnza))])
-    (let ([j (+ (- (vr arow nza) firstrow 2))])
+    (let ([j (+ (- (vr arow nza) firstrow) 2)])
       (vs!++ rowstr j)))
 
   (vs! rowstr 1 1)
@@ -356,9 +366,9 @@
       curval))
   
   (for ([nza (in-range 1 (add1 nnza))])
-    (let* ([j (+ (- (vr arow nza) firstrow 1))]
+    (let* ([j (+ (- (vr arow nza) firstrow) 1)]
            [k (vr rowstr j)])
-      (vs! a k (vr aelt nza))
+      (flvs! a k (flvr aelt nza))
       (vs! colidx k (vr acol nza))
       (vs!++ rowstr j) ))
     
@@ -368,19 +378,19 @@
   (vs! rowstr 1 1)
 
   (for ([i (in-range 1 (add1 n))])
-    (vs! x i 0.0)
+    (flvs! x i 0.0)
     (vs! mark (+ i mark-offset) 0))
 
 
   (for/fold ([nza 0]
-             [jajp1 (vr roststr 1)])
+             [jajp1 (vr rowstr 1)])
             ([j (in-range 1 (add1 nrows))])
     (let ([nzrow
       (for/fold ([nzrow 0])
                 ([k (in-range jajp1 (vr rowstr (add1 j)))])
         (let* ([i (vr colidx k)]
-               [nx (+ (vr x i) (vr a k))])
-          (vs! x i nx)
+               [nx (+ (flvr x i) (flvr a k))])
+          (flvs! x i nx)
           (if (and (zero? (vr mark (+ i mark-offset))) (not (zero? nx)))
             (let ([nzrow (add1 nzrow)])
               (vs! mark (+ i mark-offset) 1)
@@ -390,14 +400,14 @@
 
       (let ([nza
         (for/fold ([nza nza])
-                  ([k (in-ragne 1 (add1 nzrow))])
+                  ([k (in-range 1 (add1 nzrow))])
           (let ([i (vr nzloc (+ k nzloc-offset))])
             (vs! mark (+ i mark-offset) 0)
-            (let ([xi (vr x i)])
-              (vs! x i 0)
+            (let ([xi (flvr x i)])
+              (flvs! x i 0.0)
               (if (not (zero? xi))
                 (let ([nza (add1 nza)])
-                  (vs! a nza xi)
+                  (flvs! a nza xi)
                   (vs! colidx nza i)
                   nza)
                 nza))))])
@@ -406,49 +416,49 @@
           (vs! rowstr (add1 j) (+ nza (vr rowstr 1)))
           (values nza jajp1))))))
 
-(define (conj-grad colidx rowstr x z a p q r rnomr)
-  (for ([j (in-range i (+ naa 2))])
-    (vs! q j 0.0)
-    (vs! z j 0.0)
-    (let ([xj (vr x j)])
-      (vs! r j xj)
-      (vs! p j xj)))
+(define (conj-grad firstrow lastrow firstcol lastcol naa colidx rowstr x z a p q r rnorm)
+  (for ([j (in-range 1 (+ naa 2))])
+    (flvs! q j 0.0)
+    (flvs! z j 0.0)
+    (let ([xj (flvr x j)])
+      (flvs! r j xj)
+      (flvs! p j xj)))
 
   (define ncols (add1 (- lastcol firstcol)))
   (define nrows (add1 (- lastrow firstrow)))
   (define rho0 (for/fold ([rho 0.0]) ([j (in-range 1 (add1 ncols))])
-                (let ([rj (vr r j)])
+                (let ([rj (flvr r j)])
                   (+ rho (* rj rj)))))
 
   (for ([cgit (in-range 1 (add1 cgitmax))])
     (for ([j (in-range 1 (add1 nrows))])
-      (vs! q j (for/fold ([sum 0]) ([k (in-range (vr rowstr j) (vr rowstr (add1 j)))])
-                  (+ sum (* (vr a k) (vr p (vr colidx k)))))))
+      (flvs! q j (for/fold ([sum 0.0]) ([k (in-range (vr rowstr j) (vr rowstr (add1 j)))])
+                  (+ sum (* (flvr a k) (flvr p (vr colidx k)))))))
 
     (define d (for/fold ([d 0.0]) ([j (in-range 1 (add1 ncols))])
-                  (+ d (* (vr p j) (vr p j)))))
+                  (+ d (* (flvr p j) (flvr q j)))))
 
     (define alpha (/ rho0 d))
                     
     (for ([j (in-range 1 (add1 ncols))])
-      (vs!+ z j (* alpha (vr p j)))
-      (vs!- r j (* alpha (vr q j))))
+      (flvs!+ z j (* alpha (flvr p j)))
+      (flvs!- r j (* alpha (flvr q j))))
 
     (define rho (for/fold ([rho 0.0]) ([j (in-range 1 (add1 ncols))])
-                  (let ([rj (vr r j)])
+                  (let ([rj (flvr r j)])
                     (+ rho (* rj rj)))))
 
     (define beta (/ rho rho0))
 
     (for ([j (in-range 1 (add1 ncols))])
-      (vs! p j (+ (vr r j) (* beta (vr p j))))))
+      (flvs! p j (+ (flvr r j) (* beta (flvr p j))))))
 
   (for ([j (in-range 1 (add1 nrows))])
-    (vs! r j (for/fold ([sum 0]) ([k (in-range (vr rowstr j) (vr rowstr (add1 j)))])
-                (+ sum (* (vr a k) (vr z (vr colidx k)))))))
+    (flvs! r j (for/fold ([sum 0.0]) ([k (in-range (vr rowstr j) (vr rowstr (add1 j)))])
+                (+ sum (* (flvr a k) (flvr z (vr colidx k)))))))
 
   (sqrt (for/fold ([sum 0.0]) ([j (in-range 1 (add1 ncols))])
-    (let ([xj-rj (- (vr x j) (vr r j))])
+    (let ([xj-rj (- (flvr x j) (flvr r j))])
       (+ sum (* xj-rj xj-rj))))))
   
 
@@ -462,13 +472,14 @@
           (loop (+ lg 1) (* 2 nn))
           lg))))
 
-(define (get-mflops total-time niter)
+(define (get-mflops na nonzer total-time niter)
   (if (not (= total-time 0.0))
     (* (* 2 na (+ 3.0 (* nonzer (add1 nonzer)) (* 25.0 (+ 5.0 (* nonzer (add1 nonzer)))) 3))
        (/ niter (* total-time 1000000.0)))
     0.0))
 
-(define (verify zeta)
+(define (verify zeta zeta-verify-value)
+  (define epsilon 1.0E-10)
   (printf " Zeta is    ~a~n" zeta)
   (let ([dev (abs (- zeta zeta-verify-value))])
     (if (dev . <= . epsilon)
