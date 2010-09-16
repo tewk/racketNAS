@@ -7,27 +7,35 @@
 (require "../rand-generator.ss")
 (require "../timer.ss")
 (require "../parallel-utils.ss")
-(require racket/future)
-(require racket/list)
 (require racket/match)
 (require racket/math)
 (require racket/place)
 (require racket/place-utils)
 (require (for-syntax scheme/base))
 
-#;(require scheme/fixnum scheme/flonum)
+(require (only-in scheme/flonum make-flvector make-shared-flvector flvector-length))
+
+#|
+(require scheme/fixnum scheme/flonum)
 
 (require (only-in scheme/flonum make-flvector make-shared-flvector)
          scheme/require (for-syntax scheme/base)
    (filtered-in
     (lambda (name) (regexp-replace #rx"unsafe-" name ""))
     scheme/unsafe/ops))
+(define vr vector-ref)
+(define vs! vector-set!)
+(define flvs! flvector-set!)
+(define flvr flvector-ref)
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
                     [unsafe-flvector-ref flvr] 
                     [unsafe-flvector-set! flvs!]))
+|#
+
 #|
+|#
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
@@ -38,7 +46,6 @@
                     [unsafe-fl* fl*]
                     [unsafe-fl/ fl/]
 ))
-|#
  
 (define (comgrp-wait grp)
   (match grp
@@ -50,13 +57,12 @@
     [(list n ch np)  (place-channel-send ch 1)]))
 
 (define-syntax-rule (when0 np body ...)
-   (unless (and (pair? np) (not (= (first np) 0)))
+   (unless (and (pair? np) (not (= (car np) 0)))
     body ...))
 
 (define (barrier2 grp)
   (when (pair? grp)
   (comgrp-tell grp)
-  ;(when0 grp (printf "===================\n"))
   (comgrp-wait grp)))
 
 (define DOPLACES #t)
@@ -134,10 +140,6 @@
 
 (define cgitmax 25)
 (define make-fxvector make-vector)
-;(define vr vector-ref)
-;(define vs! vector-set!)
-;(define flvs! flvector-set!)
-;(define flvr flvector-ref)
 
 (define (run-benchmark args) 
   (let ([bmname "CG"]
@@ -160,21 +162,21 @@
           ;sparse matrix
           [arow (make-fxvector (+ nz 1) 0)]
           [acol (make-fxvector (+ nz 1) 0)]
-          [aelt (make-flvector (+ nz 1) 0.0)]
-          [a (make-flvector (+ nz 1) 0.0)]
+          [aelt (make-shared-flvector (+ nz 1) 0.0)]
+          [a (make-shared-flvector (+ nz 1) 0.0)]
 
-          [v (make-flvector (+ na 2) 0.0)]
-          [p (make-flvector (+ na 3) 0.0)]
-          [q (make-flvector (+ na 3) 0.0)]
-          [r (make-flvector (+ na 3) 0.0)]
-          [x (make-flvector (+ na 3) 0.0)]
-          [z (make-flvector (+ na 3) 0.0)]
+          [v (make-shared-flvector (+ na 2) 0.0)]
+          [p (make-shared-flvector (+ na 3) 0.0)]
+          [q (make-shared-flvector (+ na 3) 0.0)]
+          [r (make-shared-flvector (+ na 3) 0.0)]
+          [x (make-shared-flvector (+ na 3) 0.0)]
+          [z (make-shared-flvector (+ na 3) 0.0)]
           [rhomaster (make-shared-flvector num-threads 0.0)]
           [dmaster (make-shared-flvector num-threads 0.0)]
           [rnormmaster (make-shared-flvector num-threads 0.0)]
           [tnorm1master (make-shared-flvector num-threads 0.0)]
           [tnorm2master (make-shared-flvector num-threads 0.0)]
-          [presults (make-shared-flvector 5 0.0)])
+          [presults (make-shared-flvector 6 0.0)])
       (define ncols (add1 (- lastcol firstcol)))
       (define nrows (add1 (- lastrow firstrow)))
       (define (tnorms)
@@ -419,7 +421,14 @@
           (vs! rowstr (add1 j) (+ nza (vr rowstr 1)))
           (values nza jajp1))))))
 
+(define (pflv v)
+  (for ([i (in-range (flvector-length v))])
+    (printf "~a " (flvr v i)))
+  (newline)
+  (flush-output))
+
 (define (conj-grad nrows ncols naa colidx rowstr x z a p q r)
+  
   (for ([j (in-range 1 (+ naa 2))])
     (flvs! q j 0.0)
     (flvs! z j 0.0)
@@ -468,29 +477,36 @@
     (place/main (pwkr ch)
       (match (place-channel-recv ch)
         [(list id np niter nrows ncols naa shift colidx rowstr x z a p q r rhomaster dmaster rnormmaster tnorm1master tnorm2master presults)
-          (parallel-conj-grad-worker id np niter nrows ncols naa shift colidx rowstr x z a p q r rhomaster dmaster rnormmaster tnorm1master tnorm2master presults)]))))
+          (parallel-conj-grad-worker (list id ch np) id np niter nrows ncols naa shift colidx rowstr x z a p q r rhomaster dmaster rnormmaster tnorm1master tnorm2master presults)]))))
 
   (for ([i (in-range 1 np)]
         [ch pls])
     (place-channel-send ch (list i np niter nrows ncols naa shift colidx rowstr x z a p q r rhomaster dmaster rnormmaster tnorm1master tnorm2master presults)))
 
-  (parallel-conj-grad-worker 0 np niter nrows ncols naa shift colidx rowstr x z a p q r rhomaster dmaster rnormmaster tnorm1master tnorm2master presults))
+  (parallel-conj-grad-worker (list 0 pls np) 0 np niter nrows ncols naa shift colidx rowstr x z a p q r rhomaster dmaster rnormmaster tnorm1master tnorm2master presults))
 
 
-(define (parallel-conj-grad-worker id np niter nrows cols naa shift colidx rowstr x z a p q r rhomaster dmaster rnormmaster tnorm1master tnorm2master presults)
+(define (parallel-conj-grad-worker grp id np niter nrows ncols naa shift colidx rowstr x z a p q r rhomaster dmaster rnormmaster tnorm1master tnorm2master presults)
   (define-syntax-rule (n0-only body ...)
-    (if (= id 0)
-      (begin
-        (comgrp-tell np)
+    (begin
+      (comgrp-tell grp)
+      ;(barrier2 grp)
+      (if (= id 0)
         (begin0
           (let () body ...)
-          (comgrp-wait np))
-      )
-      #f))
+          (comgrp-wait grp))
+          ;(barrier2 grp))
+        (begin 
+          (comgrp-wait grp)
+          ;(barrier2 grp)
+          
+          #f))
+))
 
   (define num-threads np)
-  (define-values (ALPHA BETA RHO TNORM1 TNORM2) (values 0 1 2 3 4 ))
-  (define-values (start end) (stripe id naa np))
+  (define-values (ALPHA BETA RHO TNORM1 TNORM2 ZETA) (values 0 1 2 3 4 5))
+  (define-values (start end) (let-values ([(a1 a2) (stripe id naa np)])
+    (values (add1 a1) (add1 a2))))
 
   (for/last ([it (in-range niter)])
 
@@ -503,8 +519,17 @@
           (flvs! r j xj)
           (flvs! p j xj)
           (fl+ rho (fl* xj xj)))))
+#|
+    (let ([j (+ end 2)])
+        (flvs! q j 0.0)
+        (flvs! z j 0.0)
+        (let ([xj (flvr x j)])
+          (flvs! r j xj)
+          (flvs! p j xj)))
+|#
 
     (n0-only (flvs! presults RHO (for/fold ([rho 0.0]) ([m (in-range np)]) (fl+ rho (flvr rhomaster m)))))
+
 
     (for ([cgit (in-range cgitmax)])
       ;step 0
@@ -527,7 +552,7 @@
         (flvs! rhomaster id
           (for/fold ([rho 0.0]) ([j (in-range start (add1 end))])
             (let ([nrj (fl- (flvr r j) (fl* alpha (flvr q j)))])
-              (flvs!- z j (fl* alpha (flvr p j)))
+              (flvs!+ z j (fl* alpha (flvr p j)))
               (flvs! r j nrj) 
               (fl+ rho (fl* nrj nrj))))))
 
@@ -544,42 +569,42 @@
         (for ([j (in-range start (add1 end))])
           (flvs! p j (fl+ (flvr r j) (fl* beta (flvr p j))))))
 
-      (barrier id))
+      (barrier2 grp))
 
     ;step 4
-    (let-values ([(tnorm1 tnorm2)
+    (let-values ([(tnorm1 tnorm2 rnorm)
       (for/fold ([tnorm1 0.0]
-                 [tnorm2 0.0]) ([j (in-range start (add1 end))])
-        (flvs! r j (for/fold ([sum 0.0]) ([k (in-range (vr rowstr j) (vr rowstr (add1 j)))])
-                    (fl+ sum (fl* (flvr a k) (flvr z (vr colidx k))))))
-        (let ([nzj (flvr z j)])
-          (values (fl+ tnorm1 (fl* (flvr x j) nzj))
-                  (fl+ tnorm2 (fl* nzj nzj)))))])
+                 [tnorm2 0.0]
+                 [rnorm  0.0]) ([j (in-range start (add1 end))])
+        (let* ([rj (for/fold ([sum 0.0]) ([k (in-range (vr rowstr j) (vr rowstr (add1 j)))])
+                    (fl+ sum (fl* (flvr a k) (flvr z (vr colidx k)))))]
+               [zj (flvr z j)]
+               [xj (flvr x j)]
+               [xj-rj (fl- xj rj)])
+          (values (fl+ tnorm1 (fl* xj zj))
+                  (fl+ tnorm2 (fl* zj zj))
+                  (fl+ rnorm (fl* xj-rj xj-rj)))))])
       (flvs! tnorm1master id tnorm1)
-      (flvs! tnorm2master id tnorm2))
+      (flvs! tnorm2master id tnorm2)
+      (flvs! rnormmaster id rnorm))
 
     (n0-only
-      (let-values ([(tnorm1 tnorm2)
+      (let-values ([(tnorm1 tnorm2 rnorm)
           (for/fold ([tnorm1 0.0]
-                     [tnorm2 0.0])  ([m (in-range np)]) 
+                     [tnorm2 0.0]
+                     [rnorm 0.0])  ([m (in-range np)]) 
             (values (fl+ tnorm1 (flvr tnorm1master m))
-                    (fl+ tnorm2 (flvr tnorm2master m))))])
-        (flvs! presults TNORM1 tnorm1)
-        (flvs! presults TNORM2 (fl/ (sqrt tnorm2)))))
+                    (fl+ tnorm2 (flvr tnorm2master m))
+                    (fl+ rnorm (flvr rnormmaster m))))])
+        (flvs! presults TNORM2 (fl/ 1.0 (sqrt tnorm2)))
+        (let ([zeta (fl+ (exact->inexact shift) (/ 1.0 tnorm1))])
+          (printf "    ~a       ~a          ~a~n" it rnorm zeta)
+          (flvs! presults ZETA zeta))))
 
-    (flvs! rnormmaster id
       (let ([tnorm2 (flvr presults TNORM2)])
-        (for/fold ([sum 0.0]) ([j (in-range start (add1 end))])
-          (let ([xj-rj (fl- (flvr x j) (flvr r j))])
-            (flvs! x j (fl* tnorm2 (flvr z j)))
-            (fl+ sum (fl* xj-rj xj-rj))))))
-
-    (n0-only
-      (let ([rnorm (sqrt (for/fold ([rnorm 0.0]) ([m (in-range num-threads)])
-                                    (+ rnorm (vr rnormmaster m))))]
-            [zeta (+ shift (/ 1.0 (flvr presults TNORM1)))])
-        (printf "    ~a       ~a          ~a~n" it rnorm zeta)
-        zeta))))
+        (for ([j (in-range start (add1 end))])
+            (flvs! x j (fl* tnorm2 (flvr z j)))))
+      (flvr presults ZETA)))
 
 ;;ilog2 : int -> int
 (define (ilog2 n) 
