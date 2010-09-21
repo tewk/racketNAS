@@ -4,8 +4,14 @@
            randlc/a 
            vranlc 
            ipow46
-           print-seed)
-  
+           print-seed
+
+           new-rand
+           power/r)
+
+  (define-struct rand (seed tran) #:mutable)
+  (define (new-rand) (make-rand 0.0 314159265.0))
+
   (define seed 0.0) 
   
   ;Default seed
@@ -75,5 +81,20 @@
               (if (even? n)
                   (loop (quotient n 2) (randlc/a q q) r)
                   (loop (- n 1) q (randlc/a r q)))))))
+
+  (define (power/r rng a n)
+    (let loop ([pow 1.0]
+               [seed (rand-seed rng)]
+               [nj n]
+               [aj a])
+      (if (not (zero? nj))
+        (let* ([njmod2 (= (modulo nj 2) 1)]
+               [seed (if njmod2 (randlc pow aj) seed)]
+               [pow  (if njmod2 seed pow)])
+            (let ([seed (randlc aj aj)])
+              (loop pow seed (/ nj 2) seed)))
+        (begin
+          (set-rand-seed! rng seed)
+          pow))))
   
 )
