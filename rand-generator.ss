@@ -1,4 +1,5 @@
-(module rand-generator scheme
+#lang racket/base 
+(require racket/flonum)
   (provide random-init 
            randlc 
            randlc/a 
@@ -59,7 +60,7 @@
           [La (inexact->exact (floor a))]) 
       (for ([i (in-range 0 n)]) 
         (set! Lx (bitwise-and (inexact->exact (* Lx La)) i246m1)) 
-        (vector-set! y 
+        (flvector-set! y 
                      (+ offset i) 
                      (* d2m46 Lx))) 
       (exact->inexact Lx)))
@@ -89,12 +90,10 @@
                [aj a])
       (if (not (zero? nj))
         (let* ([njmod2 (= (modulo nj 2) 1)]
-               [seed (if njmod2 (randlc pow aj) seed)]
+               [seed (if njmod2 (randlc/a pow aj) seed)]
                [pow  (if njmod2 seed pow)])
-            (let ([seed (randlc aj aj)])
-              (loop pow seed (/ nj 2) seed)))
+            (let ([seed (randlc/a aj aj)])
+              (loop pow seed (quotient nj 2) seed)))
         (begin
           (set-rand-seed! rng seed)
           pow))))
-  
-)
