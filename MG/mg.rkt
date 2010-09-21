@@ -92,6 +92,12 @@
 
 (define amult 1220703125.0)
 
+(define (pflv v)
+  (for ([i (in-range (flvector-length v))])
+    (printf "~a " (flvr v i)))
+  (newline)
+  (flush-output))
+
 (define (get-class-size CLASS)
   (case CLASS 
     [(#\S) (values  32  32  32  4 5 5 5 5 5)] 
@@ -147,10 +153,14 @@
         (vs! nz lt1 nz_default)
         (let-values ([(is1 is2 is3 ie1 ie2 ie3 n1 n2 n3) (setup lt ir nx ny nz m1 m2 m3 )])
       
+      (print-banner "MG" args) 
+      (get-input-pars maxlevel)
+      (printf " Size:  ~ax~ax~a Iterations:   ~a~n" (vr nx lt1) (vr ny lt1) (vr nz lt1)  nit) 
 
 
       (zero3 u 0 n1 n2 n3)
       (zran3 v n1 n2 n3 (vr nx (sub1 lt)) (vr ny (sub1 lt)) is1 is2 is3 ie1 ie2 ie3)
+      (pflv v)
 
       (resid a u v r 0 n1 n2 n3 nm)
 
@@ -160,17 +170,12 @@
 
       (timer-stop 1)
 
-
+      (printf " Initialization time: ~a seconds\n" 0)
       (let* ([verified (verify CLASS 
               (norm2u3 r n1 n2 n3 void (vr nx lt1) (vr ny lt1) (vr nz lt1)))])
-        (print-banner "MG" args) 
-        (printf "Size = ~a X ~a X ~a niter = ~a~n" (vr nx lt1) (vr ny lt1) (vr nz lt1)  nit) 
-        (if serial 
-            (printf "SERIAL~n")
-            (printf "PARALLEL~n"))
         (if verified 
-            (printf "Verification succeeded~n") 
-            (printf "Verification failed~n"))
+            (printf "MG.~a: Verification Successful~n" CLASS) 
+            (printf "MG.~a: Verification Failed~n" CLASS))
         (let* ([time (/ (read-timer 1) 1000)]
                [results (new-BMResults bmname CLASS (vr nx lt1) (vr ny lt1) (vr nz lt1)  nit time 
                                        (get-mflops time nit n1 n2 n3)
@@ -219,13 +224,13 @@
     (match (call-with-input-file fn read)
       [(list lt lnx lny lnz nit)
         (when (lt . > . maxlevel)
-          (printf "lt=~a Maximum allowable=~a\n" lt maxlevel)
+          (printf " lt=~a Maximum allowable=~a\n" lt maxlevel)
           (exit 0))
         (values nit lt lnx lnz)]
       [else 
-        (printf "Error reading from file mg.input\n")
+        (printf " Error reading from file mg.input\n")
         (exit 0)])
-    (printf "No input file mg.input, Using compiled defaults\n")))
+    (printf " No input file mg.input, Using compiled defaults\n")))
 
 (define (setup lt ir nx ny nz m1 m2 m3 )
   (define lt1 (sub1 lt))
@@ -234,17 +239,13 @@
     (let ([k1 (add1 k)])
         (vs! nx k (/ (vr nx k1) 2))
         (vs! ny k (/ (vr ny k1) 2))
-        (vs! nz k (/ (vr nz k1) 2))
-        (printf "~a ~a ~a ~a\n" k (vr nx k) (vr ny k) (vr nz k))
-    ))
+        (vs! nz k (/ (vr nz k1) 2))))
     
   (for ([k (in-range (- lt 1) -1 -1)])
     (let ([k1 (add1 k)])
         (vs! m1 k (+ 2 (vr nx k)))
         (vs! m2 k (+ 2 (vr ny k))) 
-        (vs! m3 k (+ 2 (vr nz k)))
-        (printf "~a ~a ~a ~a\n" k (vr m1 k) (vr m2 k) (vr m3 k))
-    ))
+        (vs! m3 k (+ 2 (vr nz k)))))
 
   (for ([j (in-range (- lt 2) -1 -1)])
     (let ([j1 (add1 j)])
@@ -430,7 +431,6 @@
   (define lb 1)
   (for ([k (in-range (sub1 lt) (sub1 lb) -1)])
     (let ([j (- k 1 )])
-      ;(printf "k ~a j ~a\n" k j)
       (rprj3 r (vr ir k) (vr m1 k) (vr m2 k) (vr m3 k) (vr ir j) (vr m1 j) (vr m2 j) (vr m3 j) nm)))
   (let ([k (- lb 1 )])
     (zero3 u (vr ir k) (vr m1 k) (vr m2 k) (vr m3 k))
@@ -463,7 +463,6 @@
             (for ([j1 (in-range 2 (add1 m1j))])
               (let* ([i1 (- (- (* 2 j1) d1) 1)]
                      [ii1 (- (+ roff i1) 1)])
-                ;(printf "~a ~a ~a ~a~n" m1j j1 i1 ii1)
                 (flvs! x1 (sub1 i1) (stencil1 r ii1 i2 i3 m1k m2k))
                 (flvs! y1 (sub1 i1) (stencil2 r ii1 i2 i3 m1k m2k))))
 

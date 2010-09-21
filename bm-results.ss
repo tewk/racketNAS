@@ -76,32 +76,43 @@
        (printf "~a.~a: Verification Successful~n" bmname cls)] 
       [else 
        (printf "~a.~a: Verification Failed~n" bmname cls)]))
+
+  (define (widtho . r)
+    (let* ([s (apply format r)]
+           [sl (string-length s)])
+      (printf "~a\n" (string-append s (make-string (- 63 sl) #\ ) "* "))))
   
   ;;print-results : BMResults -> void
   (define (print-results results) 
-    (printf "***** NAS Parallel Benchmarks PLT Racket version 0.1 ~a*****~n" 
+    (printf "***** NAS Parallel Benchmarks PLT Racket version 0.1 ~a*********~n" 
             (BMResults-name results)) 
-    (printf "* Class = ~a~n" (BMResults-clss results)) 
+    (widtho "* Class             = ~a" (BMResults-clss results)) 
     (if (and (= (BMResults-n2 results) 0) (= (BMResults-n3 results) 0)) 
-        (printf "* Size = ~a~n" (BMResults-n1 results)) 
-        (printf "* Size = ~a X ~a X ~a~n" 
+        (widtho "* Size              = ~a" (BMResults-n1 results)) 
+        (widtho "* Size              = ~a X ~a X ~a" 
                 (BMResults-n1 results) 
                 (BMResults-n2 results) 
                 (BMResults-n3 results))) 
-    (printf "* Iterations = ~a~n" (BMResults-niter results)) 
-    (printf "* Time in seconds = ~a~n" (BMResults-time results)) 
-    (printf "* ACCTime = ~a~n" (BMResults-acctime results)) 
-    (printf "* Mops total = ~a~n" (BMResults-mops results)) 
-    (printf "* Operation type = ~a~n" (BMResults-optype results)) 
+    (widtho "* Iterations        = ~a" (BMResults-niter results)) 
+    (widtho "* Time in seconds   = ~a" (BMResults-time results)) 
+    (widtho "* ACCTime           = ~a" (BMResults-acctime results)) 
+    (widtho "* Mops total        = ~a" (BMResults-mops results)) 
+    (widtho "* Operation type    = ~a" (BMResults-optype results)) 
     (case (BMResults-verified results)
-      [(#t) (printf "* Verification = Successful~n")] 
-      [(#f) (printf "* Verification = Failed~n")] 
-      [(1) (printf "* Verification = Successful~n")] 
-      [(0) (printf "* Verification = Failed~n")] 
-      [else (printf "* Verification = Not Performed~n")])
+      [(#t) (widtho "* Verification      = Successful")] 
+      [(#f) (widtho "* Verification      = Failed")] 
+      [(1)  (widtho "* Verification      = Successful")] 
+      [(0)  (widtho "* Verification      = Failed")] 
+      [else (widtho "* Verification      = Not Performed")])
     (if (not (BMResults-serial results)) 
-        (printf "* Threads requested = ~a~n" (BMResults-numthreads results)) 
-        void))
+        (printf "* Threads requested = ~a" (BMResults-numthreads results)) 
+        void)
+    (widtho "*")
+    (widtho "* Please send all erros/feedbacks to:")
+    (widtho "* NPB Racket Working Team")
+    (widtho "* tewk@cs.utah.edu")
+    (printf "****************************************************************\n")
+)
   
   
   
