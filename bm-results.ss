@@ -44,7 +44,7 @@
                          bid) 
     (make-BMResults bmname 
                     "Machine Name?" 
-                    "PLT Scheme" 
+                    "PLT Racket" 
                     clss 
                     bn1 
                     bn2 
@@ -79,7 +79,7 @@
   
   ;;print-results : BMResults -> void
   (define (print-results results) 
-    (printf "***** NAS Parallel Benchmarks PLT Scheme version 0.1 ~a*****~n" 
+    (printf "***** NAS Parallel Benchmarks PLT Racket version 0.1 ~a*****~n" 
             (BMResults-name results)) 
     (printf "* Class = ~a~n" (BMResults-clss results)) 
     (if (and (= (BMResults-n2 results) 0) (= (BMResults-n3 results) 0)) 

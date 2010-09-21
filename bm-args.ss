@@ -27,7 +27,7 @@
   
   ;;print-banner : string BMArgs -> void
   (define (print-banner bmname args) 
-    (printf "NAS Parallel Benchmarks PLT Scheme Version 0.1~n") 
+    (printf "NAS Parallel Benchmarks PLT Racket Version 0.1~n") 
     (if (BMArgs-serial args) 
         (printf "Serial Version ~a.~a~n" bmname (BMArgs-class args)) 
         (printf "Multithreaded Version ~a.~a np=~a~n" 

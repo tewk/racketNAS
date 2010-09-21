@@ -233,7 +233,7 @@
       (let* ([tm-sec (/ real-ms 1000)]
              [results (make-BMResults "Integer Sort" 
                                       "Machine Name?" 
-                                      "PLT Scheme" 
+                                      "PLT Racket" 
                                       class
                                       num-keys 
                                       0 
