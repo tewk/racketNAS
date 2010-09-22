@@ -183,6 +183,7 @@
       (zero3 u 0 n1 n2 n3)
       (zran3 v n1 n2 n3 (vr nx (sub1 lt)) (vr ny (sub1 lt)) is1 is2 is3 ie1 ie2 ie3)
 
+      (timer-start 1)
       (resid a u v r 0 n1 n2 n3 nm)
 
       (for ([it (in-range 1 (add1 nit))])
