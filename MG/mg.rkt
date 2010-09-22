@@ -97,6 +97,14 @@
     (printf "~a " (flvr v i)))
   (newline)
   (flush-output))
+(define (pflv2 v d)
+  (for ([i (in-range (flvector-length v))])
+    (printf "~a ~a ~a\n" d i (flvr v i)))
+  (flush-output))
+(define (pflv2i v d)
+  (for ([i (in-range (vector-length v))])
+    (printf "~a ~a ~a\n" d i (vr v i)))
+  (flush-output))
 
 (define (get-class-size CLASS)
   (case CLASS 
@@ -157,10 +165,23 @@
       (get-input-pars maxlevel)
       (printf " Size:  ~ax~ax~a Iterations:   ~a~n" (vr nx lt1) (vr ny lt1) (vr nz lt1)  nit) 
 
+;;;//--------------------------------------------------------------------
+;;;//    One iteration for startup
+;;;//--------------------------------------------------------------------
 
       (zero3 u 0 n1 n2 n3)
       (zran3 v n1 n2 n3 (vr nx (sub1 lt)) (vr ny (sub1 lt)) is1 is2 is3 ie1 ie2 ie3)
-      (pflv v)
+      (resid a u v r 0 n1 n2 n3 nm)
+
+      (mg3P c a u v r n1 n2 n3 ir m1 m2 m3 nm lt)
+      (resid a u v r 0 n1 n2 n3 nm)
+
+;;;//--------------------------------------------------------------------
+;;;//    One iteration for startup
+;;;//--------------------------------------------------------------------
+
+      (zero3 u 0 n1 n2 n3)
+      (zran3 v n1 n2 n3 (vr nx (sub1 lt)) (vr ny (sub1 lt)) is1 is2 is3 ie1 ie2 ie3)
 
       (resid a u v r 0 n1 n2 n3 nm)
 
@@ -267,10 +288,9 @@
   (define j3 (make-fxvector (* 2 mm) 0))
   (define jg (make-fxvector (* 4 2 mm) 0))
   (define ten (make-flvector (* 2 mm) 0.0))
-  (define-syntax-rule (zidx i1 i2 i3) (+ i1 (* n1 (+ i2 (* n2 i3)))))
   (zero3 z 0 n1 n2 n3)
 
-  (let* ([i (+ (- is1 2) (* nx (+ (- is2 2) (* ny (- is3 2)))))]
+  (let* ([i (vidx3 (- is1 2) (- is2 2) (- is3 2) nx ny)]
         [d1 (add1 (- ie1 is1))]
         [e1 (+ 2 (- ie1 is1))]
         [e2 (+ 2 (- ie2 is2))]
@@ -280,11 +300,10 @@
         [a1 (power/r rng a nx)]
         [a2 (power/r rng a (* nx ny))]
         [ai (power/r rng a i)])
-    (for/fold ([x0 (randlc/a 3.14159265 ai)])  ([i3 (in-range 2 (add1 e3))])
+    (for/fold ([x0 (randlc/a 314159265.0 ai)])  ([i3 (in-range 2 (add1 e3))])
       (for/fold ([x1 x0]) ([i2 (in-range 2 (add1 e2))])
-        (let ([xx x1])
-          (vranlc d1 xx a z (vidx3 1 (sub1 i2) (sub1 i3) n1 n2))
-          (randlc/a x1 a1)))
+        (vranlc d1 x1 a z (vidx3 1 (sub1 i2) (sub1 i3) n1 n2))
+        (randlc/a x1 a1))
       (randlc/a x0 a2)))
 
   (for ([i (in-range mm)])
@@ -293,7 +312,7 @@
       (vs! j1 imm 0)
       (vs! j2 imm 0)
       (vs! j3 imm 0)
-      (flvs! ten i 0.0)
+      (flvs! ten i 1.0)
       (vs! j1 i 0)
       (vs! j2 i 0)
       (vs! j3 i 0)))
@@ -303,21 +322,20 @@
          [i1 (in-range 1 (sub1 n1))])
     (let ([zv (vr3 z i1 i2 i3 n1 n2)])
       (when (zv . > . (flvr ten mm))
-        (begin
         (flvs! ten mm zv)
         (vs! j1 mm i1)
         (vs! j2 mm i2)
         (vs! j3 mm i3)
-        (bubble ten j1 j2 j3 mm 1)))
-      (when (zv . > . (flvr ten 0))
-        (begin
+        (bubble ten j1 j2 j3 mm 1))
+      (when (zv . < . (flvr ten 0))
         (flvs! ten 0 zv)
         (vs! j1 0 i1)
         (vs! j2 0 i2)
         (vs! j3 0 i3)
-        (bubble ten j1 j2 j3 mm 0)))))
+        (bubble ten j1 j2 j3 mm 0))))
 
   
+  (define-syntax-rule (zidx i1 i2 i3) (+ i1 (* n1 (+ i2 (* n2 i3)))))
   (define-syntax-rule (vrzj ii) (flvr z (zidx (vr j1 ii) (vr j2 ii) (vr j3 ii))))
   (let-values ([(i0 i1)
     (for/fold ([i0 mm]
@@ -328,8 +346,8 @@
              [best (vrzj ii)])
         (vs! jg im4 0)
         (vs! jg (+ im4 1) (+ (- is1 2) (vr j1 ii)))
-        (vs! jg (+ im4 2) (+ (- is1 2) (vr j2 ii)))
-        (vs! jg (+ im4 3) (+ (- is1 2) (vr j3 ii)))
+        (vs! jg (+ im4 2) (+ (- is2 2) (vr j2 ii)))
+        (vs! jg (+ im4 3) (+ (- is3 2) (vr j3 ii)))
         (flvs! ten im best))
 
       (let* ([ii (sub1 i0)]
@@ -337,8 +355,8 @@
              [best (vrzj ii)])
         (vs! jg i4 0)
         (vs! jg (+ i4 1) (+ (- is1 2) (vr j1 ii)))
-        (vs! jg (+ i4 2) (+ (- is1 2) (vr j2 ii)))
-        (vs! jg (+ i4 3) (+ (- is1 2) (vr j3 ii)))
+        (vs! jg (+ i4 2) (+ (- is2 2) (vr j2 ii)))
+        (vs! jg (+ i4 3) (+ (- is3 2) (vr j3 ii)))
         (flvs! ten i best))
       (values (sub1 i0) (sub1 i1)))])
   
@@ -394,7 +412,7 @@
 
   (if (= ind 1)
     (swapem >)
-    (swapem >)))
+    (swapem <)))
 
 (define (stencil1 u ii1 i2 i3 n1 n3)
   ;n(printf "~a ~a ~a ~a ~a~n" ii1 i2 i3 n1 n3)
@@ -412,9 +430,9 @@
 (define (resid a u v r off n1 n2 n3 nm)
   (define u1 (make-flvector (add1 nm) 0.0))
   (define u2 (make-flvector (add1 nm) 0.0))
-  (for ([i3 (in-range 1 (sub1 n3))]
-        [i2 (in-range 1 (sub1 n2))])
-    (for ([i1 (in-range 1 (sub1 n1))])
+  (for* ([i3 (in-range 1 (sub1 n3))]
+         [i2 (in-range 1 (sub1 n2))])
+    (for ([i1 (in-range n1)])
         (let ([ii1 (+ off i1)])
           (flvs! u1 i1 (stencil1 u ii1 i2 i3 n1 n3))
           (flvs! u2 i1 (stencil2 u ii1 i2 i3 n1 n3))))
@@ -423,8 +441,8 @@
       (flvs! r (vidx off i1 i2 i3 n1 n3) 
              (- (vro3 v off i1 i2 i3 n1 n3)
                 (* (flvr a 0) (vro3 u off i1 i2 i3 n1 n3))
-                (* (flvr a 1) (+ (flvr u2 i1) (flvr u1 (sub1 i1)) (flvr u1 (add1 i1))))
-                (* (flvr a 2) (+ (flvr u2 (sub1 i1)) (flvr u2 (add1 i1))))))))
+                (* (flvr a 2) (+ (flvr u2 i1) (flvr u1 (sub1 i1)) (flvr u1 (add1 i1))))
+                (* (flvr a 3) (+ (flvr u2 (sub1 i1)) (flvr u2 (add1 i1))))))))
   (comm3 r off n1 n2 n3))
 
 (define (mg3P c a u v r n1 n2 n3 ir m1 m2 m3 nm lt)
@@ -435,7 +453,7 @@
   (let ([k (- lb 1 )])
     (zero3 u (vr ir k) (vr m1 k) (vr m2 k) (vr m3 k))
     (psinv c r (vr ir k) u (vr ir k) (vr m1 k) (vr m2 k) (vr m3 k) nm))
-  (for ([k (in-range lb lt)])
+  (for ([k (in-range lb (sub1 lt))])
     (let ([j (- k 1 )]
           [irk (vr ir k)]
           [m1k (vr m1 k)]
@@ -471,13 +489,19 @@
                      [ii1 (+ roff i1)]
                      [x2 (stencil1 r ii1 i2 i3 m1k m2k)]
                      [y2 (stencil2 r ii1 i2 i3 m1k m2k)])
+
+                (let ([a1 (* 0.5       (vro3 r roff i1        i2 i3 m1k m2k))]
+                      [a2 (* 0.25   (+ (vro3 r roff (sub1 i1) i2 i3 m1k m2k)
+                                       (vro3 r roff (add1 i1) i2 i3 m1k m2k)
+                                       x2))]
+                      [a3 (* 0.125  (+ (flvr x1 (sub1 i1)) 
+                                       (flvr x1 (add1 i1)) 
+                                       y2))]
+                      [a4 (* 0.0625 (+ (flvr y1 (sub1 i1)) 
+                                       (flvr y1 (add1 i1))))])
+
                 (flvs! r (vidx soff (sub1 j1) (sub1 j2) (sub1 j3) m1j m2j)
-                       (+ (* 0.5    (vro3 r roff i1 i2 i3 m1k m2k))
-                          (* 0.25   (+ (vro3 r roff (sub1 i1) i2 i3 m1k m2k)
-                                       (vro3 r roff (add1 i1) i2 i3 m1k m2k))
-                                       x2)
-                          (* 0.125  (+ (flvr x1 (sub1 i1)) (flvr x1 (add1 i1)) y2))
-                          (* 0.6125 (+ (flvr y1 (sub1 i1)) (flvr y1 (add1 i1)))))))))))))
+                         (+ a1 a2 a3 a4))))))))))
 
   (comm3 r soff m1j m2j m3j))
 
@@ -493,7 +517,7 @@
            (not (= n3 3)))
     (for ([i3 (in-range 1 mm3)])
       (for ([i2 (in-range 1 mm2)])
-        (for ([i1 (in-range 1 mm1)])
+        (for ([i1 (in-range 1 (add1 mm1))])
           (let* ([si1 (sub1 i1)]
                  [si2 (sub1 i2)]
                  [si3 (sub1 i3)]
@@ -514,9 +538,10 @@
                  [xi3 (- (* 2 i3) 2)]
                  [ii (+ uoff xi1)] 
                  [jj (+ zoff si1)] 
-                 [usss (vr3 u jj si2 si3 mm1 mm2)])
-            (vs!+ u (vidx3 ii        xi2 xi3 n1 n2) usss)
-            (vs!+ u (vidx3 (add1 ii) xi2 xi3 n1 n2) (* 0.5 (+ (vr3 u (add1 jj) si2 si3 mm1 mm2) usss)))))
+                 [uz1 (vr3 u jj        si2 si3 mm1 mm2)]
+                 [uz2 (vr3 u (add1 jj) si2 si3 mm1 mm2)])
+            (vs!+ u (vidx3 ii        xi2 xi3 n1 n2) uz1)
+            (vs!+ u (vidx3 (add1 ii) xi2 xi3 n1 n2) (* 0.5 (+ uz2 uz1)))))
         (for ([i1 (in-range 1 mm1)])
           (let* ([xi1 (- (* 2 i1) 2)]
                  [xi2 (- (* 2 i2) 1)]
@@ -535,7 +560,7 @@
             (vs!+ u (vidx3 (add1 ii) xi2 xi3 n1 n2) (* 0.25 (+ zvs (flvr z2 i1))))))
         (for ([i1 (in-range 1 mm1)])
           (let* ([xi1 (- (* 2 i1) 2)]
-                 [xi2 (- (* 2 i2) 2)]
+                 [xi2 (- (* 2 i2) 1)]
                  [xi3 (- (* 2 i3) 1)]
                  [ii (+ uoff xi1)] 
                  [zvs (flvr z3 (sub1 i1))])
@@ -606,7 +631,10 @@
                               (vro3 u zoff i1  i2  si3 mm1 mm2)
                               (vro3 u zoff i1  si2 si3 mm1 mm2)
                               (vro3 u zoff si1 i2  si3 mm1 mm2)
-                              (vro3 u zoff si1 si2 si3 mm1 mm2))))))))))))
+                              (vro3 u zoff si1 si2 si3 mm1 mm2)))))))))
+;    (pflv2 u "UU")
+;    (exit 1)
+)))
 
 (define (psinv c r roff u uoff n1 n2 n3 nm)
   (define r1 (make-flvector (add1 nm) 0.0))
@@ -616,19 +644,21 @@
     (for ([i2 (in-range 1 (sub1 n2))])
       (for ([i1 (in-range n1)])
         (flvs! r1 i1 (+ (vro3 r roff i1 (sub1 i2) i3 n1 n2)
-                      (vro3 r roff i1 (add1 i2) i3 n1 n2)
-                      (vro3 r roff i1 i2 (sub1 i3) n1 n2)
-                      (vro3 r roff i1 i2 (add1 i3) n1 n2)))
+                        (vro3 r roff i1 (add1 i2) i3 n1 n2)
+                        (vro3 r roff i1 i2        (sub1 i3) n1 n2)
+                        (vro3 r roff i1 i2        (add1 i3) n1 n2)))
         (flvs! r2 i1 (+ (vro3 r roff i1 (sub1 i2) (sub1 i3) n1 n2)
-                      (vro3 r roff i1 (add1 i2) (sub1 i3) n1 n2)
-                      (vro3 r roff i1 (sub1 i2) (add1 i3) n1 n2)
-                      (vro3 r roff i1 (add1 i2) (add1 i3) n1 n2))))
+                        (vro3 r roff i1 (add1 i2) (sub1 i3) n1 n2)
+                        (vro3 r roff i1 (sub1 i2) (add1 i3) n1 n2)
+                        (vro3 r roff i1 (add1 i2) (add1 i3) n1 n2))))
       (for ([i1 (in-range 1 (sub1 n1))])
         (flvs! u (vidx uoff i1 i2 i3 n1 n2) 
-          (+ (* (flvr c 0) (vro3 r roff i1 i2 i3 n1 n2))
+          (+ 
+             (flvr u (vidx uoff i1 i2 i3 n1 n2))
+             (* (flvr c 0) (vro3 r roff i1 i2 i3 n1 n2))
              (* (flvr c 1) (+ (vro3 r roff (sub1 i1) i2 i3 n1 n2)
-                            (vro3 r roff (add1 i1) i2 i3 n1 n2)
-                            (flvr r1 i1)))
+                              (vro3 r roff (add1 i1) i2 i3 n1 n2)
+                              (flvr r1 i1)))
              (* (flvr c 2) (+ (flvr r2 i1) (flvr r1 (sub1 i1)) (flvr r1 (add1 i1)))))))))
 
   (comm3 u uoff n1 n2 n3))
@@ -636,18 +666,18 @@
 (define (comm3 u off n1 n2 n3)
   (for* ([i3 (in-range 1 (sub1 n3))]
          [i2 (in-range 1 (sub1 n2))])
-    (flvs! u (vidx off 0 i2 i3 n1 n2) (vro3 u off (- n1 2) i2 i3 n1 n2))
-    (flvs! u (vidx off (sub1 n1) i2 i3 n1 n2) (vro3 u off 1 i2 i3 n1 n2)))
+    (flvs! u (vidx off 0         i2 i3 n1 n2) (vro3 u off (- n1 2) i2 i3 n1 n2))
+    (flvs! u (vidx off (sub1 n1) i2 i3 n1 n2) (vro3 u off 1        i2 i3 n1 n2)))
 
   (for* ([i3 (in-range 1 (sub1 n3))]
          [i1 (in-range n1)])
-    (flvs! u (vidx off i1 0 i3 n1 n2) (vro3 u off i1 (- n2 2) i3 n1 n2))
-    (flvs! u (vidx off i1 (sub1 n2) i3 n1 n2) (vro3 u off i1 1 i3 n1 n2)))
+    (flvs! u (vidx off i1 0         i3 n1 n2) (vro3 u off i1 (- n2 2) i3 n1 n2))
+    (flvs! u (vidx off i1 (sub1 n2) i3 n1 n2) (vro3 u off i1 1        i3 n1 n2)))
 
   (for* ([i2 (in-range n2)]
          [i1 (in-range n1)])
-    (flvs! u (vidx off i1 i2 0 n1 n2) (vro3 u off i1 i2 (- n3 2) n1 n2))
-    (flvs! u (vidx off i1 i2 (sub1 n3) n1 n2) (vro3 u off i1 i2 1 n1 n2))))
+    (flvs! u (vidx off i1 i2 0         n1 n2) (vro3 u off i1 i2 (- n3 2) n1 n2))
+    (flvs! u (vidx off i1 i2 (sub1 n3) n1 n2) (vro3 u off i1 i2 1        n1 n2))))
   
 ;;ilog2 : int -> int
 (define (ilog2 n) 
