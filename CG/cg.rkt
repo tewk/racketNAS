@@ -429,16 +429,17 @@
 
 (define (conj-grad nrows ncols naa colidx rowstr x z a p q r)
   
-  (for ([j (in-range 1 (+ naa 2))])
+  (define rho (for/fold ([rho 0.0]) ([j (in-range 1 (+ naa 1))])
     (flvs! q j 0.0)
     (flvs! z j 0.0)
     (let ([xj (flvr x j)])
       (flvs! r j xj)
-      (flvs! p j xj)))
+      (flvs! p j xj)
+      (fl+ rho (fl* xj xj)))))
 
-  (define rho (for/fold ([rho 0.0]) ([j (in-range 1 (add1 ncols))])
-                (let ([rj (flvr r j)])
-                  (fl+ rho (fl* rj rj)))))
+;;;  (define rho (for/fold ([rho 0.0]) ([j (in-range 1 (add1 ncols))])
+;;;                (let ([rj (flvr r j)])
+;;;                  (fl+ rho (fl* rj rj)))))
 
   (for/fold ([rho rho])  ([cgit (in-range cgitmax)])
     (for ([j (in-range 1 (add1 nrows))])
