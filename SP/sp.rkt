@@ -107,12 +107,85 @@
 
 (define (get-class-size CLASS)
   (case CLASS 
-    [(#\S) (values  12 0.015 100)]
+    [(#\S) (values  12 0.015 10)]
     [(#\W) (values  36 0.0015 400)]
     [(#\A) (values  64 0.0015 400)]
     [(#\B) (values  102 0.001 400)]
     [(#\C) (values  162 0.00067 400)]
     [else (error "Unknown class")]))
+
+(define (get-verify-values class)
+  (case class
+    [(#\S) (values
+        (flvector
+            2.7470315451339479E-2
+            1.0360746705285417E-2
+            1.6235745065095532E-2
+            1.5840557224455615E-2
+            3.4849040609362460E-2)
+        (flvector
+            2.7289258557377227E-5
+            1.0364446640837285E-5
+            1.6154798287166471E-5
+            1.5750704994480102E-5
+            3.4177666183390531E-5)
+        0.015)]
+    [(#\W) (values
+        (flvector
+        0.1893253733584E-2
+        0.1717075447775E-3
+        0.2778153350936E-3
+        0.2887475409984E-3
+        0.3143611161242E-2)
+        (flvector
+        0.7542088599534E-4
+        0.6512852253086E-5
+        0.1049092285688E-4
+        0.1128838671535E-4
+        0.1212845639773E-3)
+        0.0015)]
+    [(#\A) (values
+        (flvector
+        2.4799822399300195
+        1.1276337964368832
+        1.5028977888770491
+        1.4217816211695179
+        2.1292113035138280)
+        (flvector
+        1.0900140297820550E-4
+        3.7343951769282091E-5
+        5.0092785406541633E-5
+        4.7671093939528255E-5
+        1.3621613399213001E-4)
+        0.0015)]
+    [(#\B) (values
+        (flvector
+        0.6903293579998E+02
+        0.3095134488084E+02
+        0.4103336647017E+02
+        0.3864769009604E+02
+        0.5643482272596E+02)
+        (flvector
+        0.9810006190188E-02
+        0.1022827905670E-02
+        0.1720597911692E-02
+        0.1694479428231E-02
+        0.1847456263981E-01)
+        0.001)]
+    [(#\C) (values
+        (flvector
+        0.5881691581829E+03
+        0.2454417603569E+03
+        0.3293829191851E+03
+        0.3081924971891E+03
+        0.4597223799176E+03)
+        (flvector
+        0.2598120500183
+        0.2590888922315E-01
+        0.5132886416320E-01
+        0.4806073419454E-01
+        0.5483377491301) 
+        0.00067)]))
 
  (define ce (shared-flvector 
      2.0 1.0 2.0 2.0 5.0 
@@ -150,6 +223,9 @@
           [JMAX problem_size]
           [KMAX problem_size]
           [grid_points (make-fxvector 3 problem_size)]
+          [nx problem_size]
+          [ny problem_size]
+          [nz problem_size]
           [nx2 (- problem_size 2)]
           [ny2 (- problem_size 2)]
           [nz2 (- problem_size 2)]
@@ -266,8 +342,19 @@
           [comz5 (* 5.0 dtdssp)]
           [comz6 (* 6.0 dtdssp)]
 )
+(define (compute_rhs_thunk)
+(compute_rhs isize1 jsize1 ksize1 jsize2 ksize2 u us vs ws rho_i square qs speed
+c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
+    tx2 ty2 tz2 con43 dt
+    dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+    xxcon2 xxcon3 xxcon4 xxcon5
+    dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+    yycon2 yycon3 yycon4 yycon5
+    dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
+    zzcon2 zzcon3 zzcon4 zzcon5))
+
 (define (adi_serial)
-(compute_rhs grid_points isize1 jsize1 ksize1 jsize2 ksize2 u us vs ws rho_i square qs speed
+(compute_rhs isize1 jsize1 ksize1 jsize2 ksize2 u us vs ws rho_i square qs speed
 c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     tx2 ty2 tz2 con43 dt
     dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
@@ -302,8 +389,8 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
 ;;;//      defaults from parameters
 ;;;//---------------------------------------------------------------------
 ;      (get-input-pars)
-      (initialize u grid_points isize1 jsize1 ksize1 dnxm1 dnym1 dnzm1)
-      (exact_rhs nx2 ny2 nz2 isize1 jsize1 ksize1 jsize3 forcing grid_points dnxm1 dnym1 dnzm1 ue buf cuf q
+      (initialize u nx ny nz isize1 jsize1 ksize1 dnxm1 dnym1 dnzm1)
+      (exact_rhs nx2 ny2 nz2 isize1 jsize1 ksize1 jsize3 forcing dnxm1 dnym1 dnzm1 ue buf cuf q
   rhs u c1 c2 0.25
   tx2 ty2 tz2
   xxcon1 xxcon2 xxcon3 xxcon4 xxcon5
@@ -317,7 +404,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
 ;;;//---------------------------------------------------------------------
       (adi_serial)
 
-      (initialize u grid_points isize1 jsize1 ksize1 dnxm1 dnym1 dnzm1)
+      (initialize u nx ny nz isize1 jsize1 ksize1 dnxm1 dnym1 dnzm1)
 
       (timer-start 1)
       (for ([step (in-range 1 (add1 niter))])
@@ -327,15 +414,16 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       (timer-stop 1)
 
 
-      (let* ([verified (verify niter)])
+      (let* ([verified (verify CLASS niter dt compute_rhs_thunk
+        nx2 ny2 nz2 isize1 jsize1 ksize1 u rhs dnzm1 dnym1 dnxm1)])
         (print-banner bmname args) 
 ;        (printf "Size = ~a X ~a X ~a niter = ~a~n" (vr nx lt1) (vr ny lt1) (vr nz lt1)  nit) 
         (if verified 
             (printf "Verification Successful~n") 
             (printf "Verification Failed~n"))
         (let* ([time (/ (read-timer 1) 1000)]
-               [results (new-BMResults bmname CLASS (vr grid_points 0) (vr grid_points 1) (vr grid_points 2) niter time 
-                                       (get-mflops time niter (vr grid_points 0) (vr grid_points 1) (vr grid_points 2)) 
+               [results (new-BMResults bmname CLASS nx ny nz niter time 
+                                       (get-mflops time niter nx ny nz) 
                                        "floating point" 
                                        (if verified 1 0)
                                        serial 
@@ -372,10 +460,10 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                            (* zeta (+ (flvr ce (+ m (* 9 5)))
                                     (* zeta (flvr ce (+ m (* 12 5))))))))))))))
   
-(define (initialize u grid_points isize1 jsize1 ksize1 dnxm1 dnym1 dnzm1)
-  (for* ([k (in-range (vr grid_points 2))]
-         [j (in-range (vr grid_points 1))]
-         [i (in-range (vr grid_points 0))])
+(define (initialize u nx ny nz isize1 jsize1 ksize1 dnxm1 dnym1 dnzm1)
+  (for* ([k (in-range nz)]
+         [j (in-range ny)]
+         [i (in-range nx)])
     (let ([idx (+ (* i isize1) (* j jsize1) (* k ksize1))])
       (flvs! u (+ 0 idx) 1.0)
       (flvs! u (+ 1 idx) 0.0)
@@ -384,11 +472,11 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       (flvs! u (+ 4 idx) 1.0)))
 
   (let ([Pface (make-flvector (* 5 3 2) 0.0)])
-    (for ([k (in-range (vr grid_points 2))])
+    (for ([k (in-range nz)])
       (let ([zeta (* k dnzm1)])
-        (for ([j (in-range (vr grid_points 1))])
+        (for ([j (in-range ny)])
           (let ([eta (* j dnym1)])
-            (for ([i (in-range (vr grid_points 0))])
+            (for ([i (in-range nx)])
               (let ([xi (* i dnxm1)])
                 (for ([ix (in-range 2)])
                   (exact_solution ix eta zeta Pface (+ 0 (* 0 5) (* ix 15))))
@@ -409,12 +497,12 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                                      (* pxi peta pzeta))))))))))))
   (let ([temp (make-flvector 5 0.0)]
         [temp2 (make-flvector 5 0.0)]
-        [i2 (sub1 (vr grid_points 0))]
-        [j2 (sub1 (vr grid_points 1))]
-        [k2 (sub1 (vr grid_points 2))])
-    (for ([k (in-range (vr grid_points 2))])
+        [i2 (sub1 nx)]
+        [j2 (sub1 ny)]
+        [k2 (sub1 nz)])
+    (for ([k (in-range nz)])
       (let ([zeta (* k dnzm1)])
-        (for ([j (in-range (vr grid_points 1))])
+        (for ([j (in-range ny)])
           (let ([eta (* j dnym1)])
             (exact_solution 0.0 eta zeta temp 0)
             (exact_solution 1.0 eta zeta temp2 0)
@@ -424,7 +512,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                 (flvs! u idx (flvr temp m))
                 (flvs! u idx2 (flvr temp2 m))))))
             
-        (for ([i (in-range (vr grid_points 0))])
+        (for ([i (in-range nx)])
           (let ([xi (* i dnxm1)])
             (exact_solution xi 0.0 zeta temp 0)
             (exact_solution xi 1.0 zeta temp2 0)
@@ -434,9 +522,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                 (flvs! u idx (flvr temp m))
                 (flvs! u idx2 (flvr temp2 m))))))))
   
-    (for ([j (in-range (vr grid_points 1))])
+    (for ([j (in-range ny)])
       (let ([eta (* j dnym1)])
-        (for ([i (in-range (vr grid_points 0))])
+        (for ([i (in-range nx)])
           (let ([xi (* i dnxm1)])
             (exact_solution xi eta 0.0 temp 0)
             (exact_solution xi eta 1.0 temp2 0)
@@ -467,26 +555,25 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     (let ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
       (flvs!+ u idx (flvr rhs idx)))))
 
-(define (error-norm rms grid_points isize1 jsize1 ksize1 u dnzm1 dnym1 dnxm1)
+(define (error-norm rms nx2 ny2 nz2 isize1 jsize1 ksize1 u dnzm1 dnym1 dnxm1)
   (for ([m (in-range 5)]) (flvs! rms m 0.0))
 
   (let ([u-exact (make-flvector 5 0.0)])
-    (for ([k (in-range (vr grid_points 2))])
+    (for ([k (in-range (+ nz2 2))])
       (let ([zeta (* k dnzm1)])
-        (for ([j (in-range (vr grid_points 1))])
+        (for ([j (in-range (+ ny2 2))])
           (let ([eta (* j dnym1)])
-            (for ([i (in-range (vr grid_points 0))])
+            (for ([i (in-range (+ nx2 2))])
               (let ([xi (* i dnxm1)])
                 (exact_solution xi eta zeta u-exact 0)
                 (for ([m (in-range 5)])
                   (let* ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))]
-                         [add (- (vr u idx) (vr u-exact m))])
+                         [add (- (flvr u idx) (flvr u-exact m))])
                     (flvs!+ rms m (* add add)))))))))))
 
   
   (for ([m (in-range 5)])
-    (flvs! rms m (sqrt (for/fold ([x (flvr rms m)]) ([d (in-range 3)])
-      (/ x (1 (vr grid_points d) 2)))))))
+    (flvs! rms m (sqrt (/ (flvr rms m) nx2 ny2 nz2)))))
 
 (define (rhs-norm rms nz2 ny2 nx2 isize1 jsize1 ksize1 rhs)
   (for ([m (in-range 5)]) (flvs! rms m 0.0))
@@ -496,7 +583,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
          [i (in-range 1 (add1 nx2))]
          [m (in-range 5)])
     (let* ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))]
-           [add (vr rhs idx)])
+           [add (flvr rhs idx)])
       (flvs!+ rms m (* add add))))
   
   (for ([m (in-range 5)])
@@ -572,7 +659,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                                      (* -4.0 (flvr V2 midx-))
                                      (*  5.0 (flvr V2 midx)))))))))))
 
-(define (exact_rhs nx2 ny2 nz2 isize1 jsize1 ksize1 jsize3 forcing grid_points dnxm1 dnym1 dnzm1 ue buf cuf q
+(define (exact_rhs nx2 ny2 nz2 isize1 jsize1 ksize1 jsize3 forcing dnxm1 dnym1 dnzm1 ue buf cuf q
   rhs u c1 c2 dssp
   tx2 ty2 tz2
   xxcon1 xxcon2 xxcon3 xxcon4 xxcon5
@@ -700,9 +787,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       zzcon2 zzcon2 zzcon1 zzcon3 zzcon4 zzcon5
       dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1))
 
-    (for* ([k (in-range 1 (- (vr grid_points 2) 2))]
-           [j (in-range 1 (- (vr grid_points 1) 2))]
-           [i (in-range 1 (- (vr grid_points 0) 2))]
+    (for* ([k (in-range 1 nz2)]
+           [j (in-range 1 ny2)]
+           [i (in-range 1 nx2)]
            [m (in-range 5)])
       (flvs!* forcing (+ m (* i isize1) (* j jsize1) (* k ksize1)) -1.0))
 )
@@ -743,7 +830,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       (flvs! rhs (+ 3 idx) (- t2 t1))
       (flvs! rhs (+ 4 idx) (+ t1 t2)))))
 
-(define (compute_rhs grid_points isize1 jsize1 ksize1 jsize2 ksize2 u us vs ws rho_i square qs speed
+(define (compute_rhs isize1 jsize1 ksize1 jsize2 ksize2 u us vs ws rho_i square qs speed
 c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     tx2 ty2 tz2 con43 dt
     dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
@@ -753,9 +840,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
     zzcon2 zzcon3 zzcon4 zzcon5
 )
-  (for* ([k (in-range (vr grid_points 2))]
-         [j (in-range (vr grid_points 1))]
-         [i (in-range (vr grid_points 0))])
+  (for* ([k (in-range (+ nz2 2))]
+         [j (in-range (+ ny2 2))]
+         [i (in-range (+ nx2 2))])
     (let* ([idx (+ (* i isize1) (* j jsize1) (* k ksize1))]
            [idx2 (+ i (* j jsize2) (* k ksize2))]
            [rho_inv (/ 1.0 (flvr u idx))]
@@ -950,18 +1037,20 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                               (* (flvr qs idx2) t2)
                               (* c2iv ac2u t1)
                               (* zvel t3))))))
-(define (verify class rnm2 no_time_steps dt)
+(define (verify class no_time_steps dt compute_rhs_thunk
+  nx2 ny2 nz2 isize1 jsize1 ksize1 u rhs dnzm1 dnym1 dnxm1)
   (define xcrdif (make-flvector 5 0.0))
   (define xcedif (make-flvector 5 0.0))
   (define xcr (make-flvector 5 0.0))
   (define xce (make-flvector 5 0.0))
+  (define-values (xcrref xceref dtref) (get-verify-values class))
 
 ;;;//---------------------------------------------------------------------
 ;;;//   compute the error norm and the residual norm, and exit if not printing
 ;;;//---------------------------------------------------------------------
-    (error-norm xce)
-    (compute_rhs)
-    (rhs-norm xcr)
+    (error-norm xce nx2 ny2 nz2 isize1 jsize1 ksize1 u dnzm1 dnym1 dnxm1)
+    (compute_rhs_thunk)
+    (rhs-norm xcr nz2 ny2 nx2 isize1 jsize1 ksize1 rhs)
 
     (for ([m (in-range 5)]) 
       (flvs!/ xcr m dt)
@@ -977,87 +1066,15 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
 ;;;//---------------------------------------------------------------------
 ;;;//    Reference values of RMS-norms of solution error.
 ;;;//---------------------------------------------------------------------
-  (define-values (xcrref xceref dtref)
-  (case class
-  [(#\S) (values
-      (flvector
-          2.7470315451339479E-2
-          1.0360746705285417E-2
-          1.6235745065095532E-2
-          1.5840557224455615E-2
-          3.4849040609362460E-2)
-      (flvector
-          2.7289258557377227E-5
-          1.0364446640837285E-5
-          1.6154798287166471E-5
-          1.5750704994480102E-5
-          3.4177666183390531E-5)
-      0.015)]
-  [(#\W) (values
-      (flvector
-      0.1893253733584E-2
-      0.1717075447775E-3
-      0.2778153350936E-3
-      0.2887475409984E-3
-      0.3143611161242E-2)
-      (flvector
-      0.7542088599534E-4
-      0.6512852253086E-5
-      0.1049092285688E-4
-      0.1128838671535E-4
-      0.1212845639773E-3)
-      0.0015)]
-  [(#\A) (values
-      (flvector
-      2.4799822399300195
-      1.1276337964368832
-      1.5028977888770491
-      1.4217816211695179
-      2.1292113035138280)
-      (flvector
-      1.0900140297820550E-4
-      3.7343951769282091E-5
-      5.0092785406541633E-5
-      4.7671093939528255E-5
-      1.3621613399213001E-4)
-      0.0015)]
-  [(#\B) (values
-      (flvector
-      0.6903293579998E+02
-      0.3095134488084E+02
-      0.4103336647017E+02
-      0.3864769009604E+02
-      0.5643482272596E+02)
-      (flvector
-      0.9810006190188E-02
-      0.1022827905670E-02
-      0.1720597911692E-02
-      0.1694479428231E-02
-      0.1847456263981E-01)
-      0.001)]
-  [(#\C) (values
-      (flvector
-      0.5881691581829E+03
-      0.2454417603569E+03
-      0.3293829191851E+03
-      0.3081924971891E+03
-      0.4597223799176E+03)
-      (flvector
-      0.2598120500183
-      0.2590888922315E-01
-      0.5132886416320E-01
-      0.4806073419454E-01
-      0.5483377491301) 
-      0.00067)]))
 
     (for ([m (in-range 5)]) 
       (let ([xcrr (flvr xcrref m)]
             [xcer (flvr xceref m)])
-        (flvs! xcrdif m (/ (abs (- (flvr xcr m) xcrr) xcrr)))
-        (flvs! xcedif m (/ (abs (- (flvr xce m) xcer) xcer)))))
+        (flvs! xcrdif m (abs (/ (- (flvr xcr m) xcrr) xcrr)))
+        (flvs! xcedif m (abs (/ (- (flvr xce m) xcer) xcer)))))
 
   (define  epsilon 1.0E-8)
-  (if (not (= class #\U))
+  (if (not (equal? class #\U))
     (begin
       (printf " Verification being performed for class ~a\n" class)
       (printf " Accuracy setting for epsilon = ~a\n" epsilon)
