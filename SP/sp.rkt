@@ -13,10 +13,26 @@
 ;(require racket/place-utils)
 (require (for-syntax scheme/base))
 
+#|
 (require (only-in scheme/flonum make-flvector 
                                 make-shared-flvector 
                                 shared-flvector
-                                flvector-length))
+                                flvector-length
+                                flvector
+                                flmax))
+|#
+(require (only-in scheme/flonum make-flvector 
+                                make-shared-flvector 
+                                shared-flvector
+                                flvector-length
+                                flvector
+                                flmax
+                                flvector-set!
+                                flvector-ref))
+(define vr vector-ref)
+(define vs! vector-set!)
+(define flvs! flvector-set!)
+(define flvr flvector-ref)
 
 #|
 (require scheme/fixnum scheme/flonum)
@@ -26,10 +42,6 @@
    (filtered-in
     (lambda (name) (regexp-replace #rx"unsafe-" name ""))
     scheme/unsafe/ops))
-(define vr vector-ref)
-(define vs! vector-set!)
-(define flvs! flvector-set!)
-(define flvr flvector-ref)
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
@@ -38,7 +50,6 @@
 |#
 
 #|
-|#
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
@@ -49,6 +60,7 @@
                     [unsafe-fl* fl*]
                     [unsafe-fl/ fl/]
 ))
+|#
 (define-syntax (defconst stx)
   (syntax-case stx ()
     [(_ x v)
@@ -62,6 +74,9 @@
               [id (datum->syntax #'x (eval v))]))))]))
 
 (defconst bt (sqrt 0.5))
+(defconst c1 1.4)
+(defconst c2 0.4)
+
 (defconst c1c2 (* 1.4 0.4))
 (defconst c1c5 (* 1.4 1.4))
 (defconst c3c4 (* 0.1 1.0))
@@ -84,7 +99,11 @@
     (flvs! v idx (* (flvr v idx) val ...))))
 (define-syntax-rule (flvs!/ v idx_ val ...)
   (let ([idx idx_])
-    (flvs! v idx (/ (flvector-ref v idx) val ...))))
+    (flvs! v idx (/ (flvr v idx) val ...))))
+(define-syntax (flmax* stx)
+  (syntax-case stx ()
+    [(_ a b) #'(flmax a b)]
+    [(_ a b ...) #'(flmax a (flmax* b ...))]))
 
 (define (get-class-size CLASS)
   (case CLASS 
@@ -142,6 +161,7 @@
           [ksize1 (* 5 (add1 IMAX) (add1 JMAX))]
           [jsize2 (add1 IMAX)]
           [ksize2 (* (add1 IMAX) (add1 JMAX))]
+          [jsize3 problem_size]
           [jsize4 5]
           [s1 (* ksize1 KMAX)]
           [s2 (* ksize2 KMAX)]
@@ -153,7 +173,7 @@
           [vs      (make-shared-flvector s2 0.0)]
           [ws      (make-shared-flvector s2 0.0)]
           [qs      (make-shared-flvector s2 0.0)]
-          [rho-i   (make-shared-flvector s2 0.0)]
+          [rho_i   (make-shared-flvector s2 0.0)]
           [speed   (make-shared-flvector s2 0.0)]
           [square  (make-shared-flvector s2 0.0)]
           [lhs     (make-shared-flvector s3 0.0)]
@@ -164,20 +184,140 @@
           [rhos    (make-shared-flvector problem_size 0.0)]
           [rhoq    (make-shared-flvector problem_size 0.0)]
           [cuf     (make-shared-flvector problem_size 0.0)]
-          [q       (make-shared-flvector problem_size 0.0)])
+          [q       (make-shared-flvector problem_size 0.0)]
+          [ue      (make-shared-flvector (* 5 problem_size) 0.0)]
+          [buf     (make-shared-flvector (* 5 problem_size) 0.0)]
+          [tx1     (/ 1.0 (sqr dnxm1))]
+          [ty1     (/ 1.0 (sqr dnym1))]
+          [tz1     (/ 1.0 (sqr dnzm1))]
+          [tx2     (/ 1.0 (* 2.0 dnxm1))]
+          [ty2     (/ 1.0 (* 2.0 dnym1))]
+          [tz2     (/ 1.0 (* 2.0 dnzm1))]
+          [tx3     (/ 1.0 dnxm1)]
+          [ty3     (/ 1.0 dnym1)]
+          [tz3     (/ 1.0 dnzm1)]
+          [c3c4tx3 (* c3c4 tx3)]
+          [c3c4ty3 (* c3c4 ty3)]
+          [c3c4tz3 (* c3c4 tz3)]
+          [con43   (/ 4.0 3.0)]
+          [conz1   (- 1.0 c1c5)]
+          [con16   (/ 1.0 6.0)]
+          [dssp    0.25]
+          [xxcon1  (* c3c4tx3 con43 tx3)]
+          [xxcon2  (* c3c4tx3 tx3)]
+          [xxcon3  (* c3c4tx3 conz1 tx3)]
+          [xxcon4  (* c3c4tx3 con16 tx3)]
+          [xxcon5  (* c3c4tx3 c1c5 tx3)]
+          [yycon1  (* c3c4ty3 con43 ty3)]
+          [yycon2  (* c3c4ty3 ty3)]
+          [yycon3  (* c3c4ty3 conz1 ty3)]
+          [yycon4  (* c3c4ty3 con16 ty3)]
+          [yycon5  (* c3c4ty3 c1c5 ty3)]
+          [zzcon1  (* c3c4tz3 con43 tz3)]
+          [zzcon2  (* c3c4tz3 tz3)]
+          [zzcon3  (* c3c4tz3 conz1 tz3)]
+          [zzcon4  (* c3c4tz3 con16 tz3)]
+          [zzcon5  (* c3c4tz3 c1c5 tz3)]
+          [dx1tx1  (* 0.75 tx1)]
+          [dx2tx1  (* 0.75 tx1)]
+          [dx3tx1  (* 0.75 tx1)]
+          [dx4tx1  (* 0.75 tx1)]
+          [dx5tx1  (* 0.75 tx1)]
+          [dy1ty1  (* 0.75 ty1)]
+          [dy2ty1  (* 0.75 ty1)]
+          [dy3ty1  (* 0.75 ty1)]
+          [dy4ty1  (* 0.75 ty1)]
+          [dy5ty1  (* 0.75 ty1)]
+          [dz1tz1  (* 1.0 tz1)]
+          [dz2tz1  (* 1.0 tz1)]
+          [dz3tz1  (* 1.0 tz1)]
+          [dz4tz1  (* 1.0 tz1)]
+          [dz5tz1  (* 1.0 tz1)]
+          [dx1 0.75]
+          [dx2 0.75]
+          [dx3 0.75]
+          [dx4 0.75]
+          [dx5 0.75]
+          [dy1 0.75]
+          [dy2 0.75]
+          [dy3 0.75]
+          [dy4 0.75]
+          [dy5 0.75]
+          [dz1 1.00]
+          [dz2 1.00]
+          [dz3 1.00]
+          [dz4 1.00]
+          [dz5 1.00]
+          [dttx1 (* dt tx1)]
+          [dttx2 (* dt tx2)]
+          [dtty1 (* dt ty1)]
+          [dtty2 (* dt ty2)]
+          [dttz1 (* dt tz1)]
+          [dttz2 (* dt tz2)]
+          [c2dttx1 (* 2.0 dttx1)]
+          [c2dtty1 (* 2.0 dtty1)]
+          [c2dttz1 (* 2.0 dttz1)]
+          [dxmax (flmax dx3 dx4)]
+          [dymax (flmax dy2 dy4)]
+          [dzmax (flmax dz2 dz3)]
+          [dtdssp (* dt dssp)]
+          [comz1 dtdssp]
+          [comz4 (* 4.0 dtdssp)]
+          [comz5 (* 5.0 dtdssp)]
+          [comz6 (* 6.0 dtdssp)]
+)
+(define (adi_serial)
+(compute_rhs grid_points isize1 jsize1 ksize1 jsize2 ksize2 u us vs ws rho_i square qs speed
+c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
+    tx2 ty2 tz2 con43 dt
+    dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+    xxcon2 xxcon3 xxcon4 xxcon5
+    dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+    yycon2 yycon3 yycon4 yycon5
+    dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
+    zzcon2 zzcon3 zzcon4 zzcon5
+)
+  (txinvr nz2 ny2 nx2 isize1 jsize1 ksize1 jsize2 ksize2 rho_i us vs ws qs speed rhs c2 bt)
+  (x_solve nz2 ny2 nx2 us rhon dx2 dx5 dx1 dttx1 dttx2 c2dttx1
+    isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+    rho_i cv con43 c1c5 dxmax rhs lhs speed lhsp lhsm
+    comz1 comz4 comz5 comz6)
+  (y_solve nz2 ny2 nx2 vs rhoq
+    dy2 dy5 dy1 dtty1 dtty2 c2dtty1
+    isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+    rho_i cv con43 c1c5 dymax rhs lhs speed lhsp lhsm
+    comz1 comz4 comz5 comz6)
+  (z_solve nz2 ny2 nx2 ws rhos
+    dz2 dz5 dz1 dttz1 dttz2 c2dttz1
+    isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+    rho_i cv con43 c1c5 dzmax rhs lhs speed lhsp lhsm
+    comz1 comz4 comz5 comz6
+    u us vs qs)
+  (add nz2 ny2 nx2 isize1 jsize1 ksize1 u rhs)
+  )
+
+
 ;;;//---------------------------------------------------------------------
 ;;;//      Read input file (if it exists), else take
 ;;;//      defaults from parameters
 ;;;//---------------------------------------------------------------------
-      (get-input-pars)
-      (initialize)
-      (exact_rhs)
+;      (get-input-pars)
+      (initialize u grid_points isize1 jsize1 ksize1 dnxm1 dnym1 dnzm1)
+      (exact_rhs nx2 ny2 nz2 isize1 jsize1 ksize1 jsize3 forcing grid_points dnxm1 dnym1 dnzm1 ue buf cuf q
+  rhs u c1 c2 0.25
+  tx2 ty2 tz2
+  xxcon1 xxcon2 xxcon3 xxcon4 xxcon5
+  dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+  yycon1 yycon2 yycon3 yycon4 yycon5
+  dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+  zzcon1 zzcon2 zzcon3 zzcon4 zzcon5
+  dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
 ;;;//---------------------------------------------------------------------
 ;;;//      do one time step to touch all code, and reinitialize
 ;;;//---------------------------------------------------------------------
       (adi_serial)
 
-      (initialize)
+      (initialize u grid_points isize1 jsize1 ksize1 dnxm1 dnym1 dnzm1)
 
       (timer-start 1)
       (for ([step (in-range 1 (add1 niter))])
@@ -215,14 +355,6 @@
          (/ niter (* total-time 1000000.0))))
       0.0))
 
-(define (adi_serial)
-  (compute_rhs)
-  (txinvr)
-  (x_solve)
-  (y_solve)
-  (z_solve)
-  (add))
-
 (define (exact_solution xi eta zeta dtemp offset)
   (for ([m (in-range 5)])
     (flvs! dtemp (+ m offset) 
@@ -240,17 +372,16 @@
                            (* zeta (+ (flvr ce (+ m (* 9 5)))
                                     (* zeta (flvr ce (+ m (* 12 5))))))))))))))
   
-(define (initialize grid_points isize1 jsize1 ksize1 u
-dnxm1 dnym1 dnzm1)
+(define (initialize u grid_points isize1 jsize1 ksize1 dnxm1 dnym1 dnzm1)
   (for* ([k (in-range (vr grid_points 2))]
          [j (in-range (vr grid_points 1))]
          [i (in-range (vr grid_points 0))])
     (let ([idx (+ (* i isize1) (* j jsize1) (* k ksize1))])
-      (vs! u (+ 0 idx) 1.0)
-      (vs! u (+ 1 idx) 0.0)
-      (vs! u (+ 2 idx) 0.0)
-      (vs! u (+ 3 idx) 0.0)
-      (vs! u (+ 4 idx) 1.0)))
+      (flvs! u (+ 0 idx) 1.0)
+      (flvs! u (+ 1 idx) 0.0)
+      (flvs! u (+ 2 idx) 0.0)
+      (flvs! u (+ 3 idx) 0.0)
+      (flvs! u (+ 4 idx) 1.0)))
 
   (let ([Pface (make-flvector (* 5 3 2) 0.0)])
     (for ([k (in-range (vr grid_points 2))])
@@ -268,12 +399,12 @@ dnxm1 dnym1 dnzm1)
 
                 (for ([m (in-range 5)])
                   (let ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))]
-                        [pxi   (+ (* xi   (vr Pface (+ m (* 0 5) (* 1 15))))
-                                 (* (- 1.0   xi) (vr Pface (+ m (* 0 5) (* 0 15)))))]
-                        [peta  (+ (* eta  (vr Pface (+ m (* 1 5) (* 1 15))))
-                                 (* (- 1.0  eta) (vr Pface (+ m (* 1 5) (* 0 15)))))]
-                        [pzeta (+ (* zeta (vr Pface (+ m (* 2 5) (* 1 15))))
-                                 (* (- 1.0 zeta) (vr Pface (+ m (* 2 5) (* 0 15)))))])
+                        [pxi   (+ (* xi   (flvr Pface (+ m (* 0 5) (* 1 15))))
+                                 (* (- 1.0   xi) (flvr Pface (+ m (* 0 5) (* 0 15)))))]
+                        [peta  (+ (* eta  (flvr Pface (+ m (* 1 5) (* 1 15))))
+                                 (* (- 1.0  eta) (flvr Pface (+ m (* 1 5) (* 0 15)))))]
+                        [pzeta (+ (* zeta (flvr Pface (+ m (* 2 5) (* 1 15))))
+                                 (* (- 1.0 zeta) (flvr Pface (+ m (* 2 5) (* 0 15)))))])
                     (flvs! u idx  (+ (- (+ pxi peta pzeta) (* pxi peta) (* pxi pzeta) (* peta pzeta))
                                      (* pxi peta pzeta))))))))))))
   (let ([temp (make-flvector 5 0.0)]
@@ -290,8 +421,8 @@ dnxm1 dnym1 dnzm1)
             (for ([m (in-range 5)])
               (let* ([idx (+ m (* j jsize1) (* k ksize1))]
                      [idx2 (+ (* i2 isize1) idx)])
-                (flvs! u idx (vr temp m))
-                (flvs! u idx2 (vr temp2 m))))))
+                (flvs! u idx (flvr temp m))
+                (flvs! u idx2 (flvr temp2 m))))))
             
         (for ([i (in-range (vr grid_points 0))])
           (let ([xi (* i dnxm1)])
@@ -300,8 +431,8 @@ dnxm1 dnym1 dnzm1)
             (for ([m (in-range 5)])
               (let* ([idx (+ m (* i isize1) (* k ksize1))]
                      [idx2 (+ (* j2 jsize1) idx)])
-                (flvs! u idx (vr temp m))
-                (flvs! u idx2 (vr temp2 m))))))))
+                (flvs! u idx (flvr temp m))
+                (flvs! u idx2 (flvr temp2 m))))))))
   
     (for ([j (in-range (vr grid_points 1))])
       (let ([eta (* j dnym1)])
@@ -312,8 +443,21 @@ dnxm1 dnym1 dnzm1)
             (for ([m (in-range 5)])
               (let* ([idx (+ m (* i isize1) (* j jsize1))]
                      [idx2 (+ (* k2 ksize1) idx)])
-                (flvs! u idx (vr temp m))
-                (flvs! u idx2 (vr temp2 m))))))))))
+                (flvs! u idx (flvr temp m))
+                (flvs! u idx2 (flvr temp2 m))))))))))
+
+(define (lhsinit size jsize4 lhs lhsp lhsm)
+  (for* ([i (in-range (add1 size) size)]
+        [n (in-range 5)])
+    (let ([nij (+ n (* i jsize4))])
+      (flvs! lhs nij 0.0)
+      (flvs! lhsp nij 0.0)
+      (flvs! lhsm nij 0.0)))
+  (for ([i (in-range (add1 size) size)])
+    (let ([nij (+ 2 (* i jsize4))])
+      (flvs! lhs nij 1.0)
+      (flvs! lhsp nij 1.0)
+      (flvs! lhsm nij 1.0))))
 
 (define (add nz2 ny2 nx2 isize1 jsize1 ksize1 u rhs)
   (for* ([k (in-range 1 (add1 nz2))]
@@ -321,7 +465,7 @@ dnxm1 dnym1 dnzm1)
          [i (in-range 1 (add1 nx2))]
          [m (in-range 5)])
     (let ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-      (flvs!+ u idx (vr rhs idx)))))
+      (flvs!+ u idx (flvr rhs idx)))))
 
 (define (error-norm rms grid_points isize1 jsize1 ksize1 u dnzm1 dnym1 dnxm1)
   (for ([m (in-range 5)]) (flvs! rms m 0.0))
@@ -358,6 +502,76 @@ dnxm1 dnym1 dnzm1)
   (for ([m (in-range 5)])
     (flvs! rms m (sqrt (/ (flvr rms m) nx2 ny2 nz2)))))
 
+(define-syntax-rule (fourth-order-dissipation ii nII2 V V2 i j k m midx idx
+  MIDX MIDX+ MIDX+2 MIDX- MIDX-2 
+  DIDX IDX dssp)
+
+;    (fourth-order-dissipation ii NII2 forcing ue i j k m midx idx
+;              (+ ii (* m jsize3)) (+ 1 midx) (+ 2 midx) (- midx 1) (- midx 2) 
+;              midx (+ (* i isize1) (* j jsize1) (* k ksize1)) dssp)
+;    (fourth-order-dissipation ii nii2 rhs u i j k m midx idx 
+;              (+ m idx) (+ m idxz+) (+ m idxz+2) (+ m idxz-) (+ m idxz-2)
+;               midx (+ (* i isize1) (* j jsize1) (* k ksize1)) dssp))))
+  (begin
+  (let* ([ii 1]
+         [idx IDX])
+    (for ([m (in-range 5)])
+      (let* ([midx   MIDX]
+             [midx+  MIDX+]
+             [midx+2 MIDX+2]
+             [didx   DIDX])
+        (flvs!+ V didx (- (* dssp (+ (*  5.0 (flvr V2 midx))
+                                     (* -4.0 (flvr V2 midx+)))
+                                             (flvr V2 midx+2)))))))
+  (let* ([ii 2]
+         [idx IDX])
+    (for ([m (in-range 5)])
+      (let* ([midx   MIDX]
+             [midx+  MIDX+]
+             [midx+2 MIDX+2]
+             [midx-  MIDX-]
+             [didx   DIDX])
+        (flvs!+ V didx (- (* dssp (+ (* -4.0 (flvr V2 midx-)) 
+                                     (*  6.0 (flvr V2 midx))
+                                     (* -4.0 (flvr V2 midx+))
+                                             (flvr V2 midx+2))))))))
+  (for ([ii (in-range 3 (sub1 nII2))])
+    (let ([idx IDX])
+      (for ([m (in-range 5)])
+        (let* ([midx   MIDX]
+               [midx+  MIDX+]
+               [midx+2 MIDX+2]
+               [midx-  MIDX-]
+               [midx-2 MIDX-2]
+               [didx   DIDX])
+          (flvs!+ V didx (- (* dssp (+         (flvr V2 midx-2)
+                                       (* -4.0 (flvr V2 midx-))
+                                       (*  6.0 (flvr V2 midx))
+                                       (*  4.0 (flvr V2 midx+))
+                                               (flvr V2 midx+2)))))))))
+  (let* ([ii (sub1 nII2)]
+         [idx IDX])
+    (for ([m (in-range 5)])
+      (let* ([midx   MIDX]
+             [midx+  MIDX+]
+             [midx-  MIDX-]
+             [midx-2 MIDX-2]
+             [didx   DIDX])
+        (flvs!+ V didx (- (* dssp (+         (flvr V2 midx-2)
+                                     (* -4.0 (flvr V2 midx-))
+                                     (*  6.0 (flvr V2 midx))
+                                     (* -4.0 (flvr V2 midx+)))))))))
+  (let* ([ii nII2]
+         [idx IDX])
+    (for ([m (in-range 5)])
+      (let* ([midx   MIDX]
+             [midx-  MIDX-]
+             [midx-2 MIDX-2]
+             [didx   DIDX])
+        (flvs!+ V didx (- (* dssp (+         (flvr V2 midx-2)
+                                     (* -4.0 (flvr V2 midx-))
+                                     (*  5.0 (flvr V2 midx)))))))))))
+
 (define (exact_rhs nx2 ny2 nz2 isize1 jsize1 ksize1 jsize3 forcing grid_points dnxm1 dnym1 dnzm1 ue buf cuf q
   rhs u c1 c2 dssp
   tx2 ty2 tz2
@@ -375,156 +589,116 @@ dnxm1 dnym1 dnzm1)
     (let ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
       (flvs!+ forcing idx 0.0)))
 
-(define-syntax-rule (body2 ii giidx t_2 f1jsize3 jsize3 ue buf cuf q c1 c2 i j k hh dtemp
+(define-syntax-rule (body2 ii jj kk NII2 NJJ2 NKK2 t_2 f1jsize3 jsize3 ue buf cuf q c1 c2 i j k hh dtemp
   t_2m1 t_2m2 t_2m3 
   _con_0 _con_1 _con_2 __con3 __con4 __con5
   d_1t_1 d_2t_1 d_3t_1 d_4t_1 d_5t_1)
   (begin
-          (for ([ii (in-range 0 (- (vr grid_points giidx) 1))])
+    (for ([kk (in-range 1 NKK2)])
+        (for ([jj (in-range 1 NJJ2)])
+          (for ([ii (in-range 0 (add1 NII2))])
               (let ([xi (* i dnxm1)]
                     [eta (* j dnym1)]
                     [zeta (* k dnzm1)])
                 (exact_solution xi eta zeta dtemp 0)
-                (let ([dtpp (/ 1.0 (vr dtemp 0))])
+                (let ([dtpp (/ 1.0 (flvr dtemp 0))])
                   (for ([m (in-range 5)])
                     (let ([idx (+ ii (* m jsize3))]
-                          [dtv (vr dtemp m)])
+                          [dtv (flvr dtemp m)])
                     (flvs! ue idx dtv)
                     (flvs! buf idx (* dtpp dtv)))))
                 (let* ([ij (+ ii jsize3)]
                        [i2j (+ ii (* 2 jsize3))]
                        [i3j (+ ii (* 3 jsize3))]
-                       [bufij (vr buf ij)]
-                       [bufi2j (vr buf i2j)]
-                       [bufi3j (vr buf i3j)]
-                       [ueij (vr ue ij)]
-                       [uei2j (vr ue i2j)]
-                       [uei3j (vr ue i3j)]
+                       [bufij (flvr buf ij)]
+                       [bufi2j (flvr buf i2j)]
+                       [bufi3j (flvr buf i3j)]
+                       [ueij (flvr ue ij)]
+                       [uei2j (flvr ue i2j)]
+                       [uei3j (flvr ue i3j)]
                        [bufij2 (sqr bufij)]
                        [bufi2j2 (sqr bufi2j)]
                        [bufi3j2 (sqr bufi3j)])
-                (flvs! cuf ii (sqr (vr buf (+ ii (* hh jsize3)))))
+                (flvs! cuf ii (sqr (flvr buf (+ ii (* hh jsize3)))))
                 (flvs! buf ii (+ bufij2 bufi2j2 bufi3j2))
                 (flvs! q ii (* 0.5 (+ (* bufij ueij) (* bufi2j uei2j) (* bufi3j uei3j)))))))
 
-          (for ([ii (in-range (- (vr grid_points giidx) 2))])
-            (let ([ip1 (add1 ii)]
-                  [im1 (sub1 ii)]
-                  [idx (+ (* i isize1) (* j jsize1) (* k ksize1))]
-                  [x4jsize3 (* 4 jsize3)]
-                  [iijsize3 (* ii jsize3)])
+          (for ([ii (in-range 1 NII2)])
+            (let* ([ip1 (add1 ii)]
+                   [im1 (sub1 ii)]
+                   [didx (+ (* i isize1) (* j jsize1) (* k ksize1))]
+                   [idx2 f1jsize3]
+                   [idx2+ (+ ip1 f1jsize3)]
+                   [idx2- (+ im1 f1jsize3)]
+                   [A4J (* 4 jsize3)]
+                   [A4J+ (+ ip1 A4J)]
+                   [A4J- (+ im1 A4J)])
 
-              (define-syntax-rule (vrit V I1 I2) (vr V (+ I1 I2)))
-              (define-syntax-rule (cit c v t)
-                (* c (+ (- (vrit v ip1 t) (* 2.0 (vrit v ii t))) (vrit v im1 t))))
-              (define-syntax-rule (cit2 C V)
-                (* C (+ (- (vr V ip1 f1jsize3) (* 2.0 (vr V ii f1jsize3)) (vr V im1 f1jsize3)))))
-              (define-syntax-rule (dit d t) (cit d ue t))
-              (define-syntax-rule (xit x t) (cit x buf t))
+              (define-syntax-rule (citA C C1 C2 C3) (* C (+ (- C1 (* 2.0 C2) C3))))
+              (define-syntax-rule (citS3 C V I1 I2 I3) (citA C (flvr V I1) (flvr V I2) (flvr V I3)))
+              (define-syntax-rule (citS C V) (citA C (flvr V ip1) (flvr V ii) (flvr V im1)))
 
-              (define-syntax-rule (t_2it l r o) (- (* t_2 (+ (-  l r) o))))
-              (define-syntax-rule (t_2itlr s mjs3) (* (vrit ue s mjs3) (vrit buf s f1jsize3)))
-              (define-syntax-rule (t_2ito) (- (* c2 (- (vrit ue ip1 x4jsize3) (flvr q ip1)))
-                                              (* c2 (- (vrit ue im1 x4jsize3) (flvr q im1)))))
+              (define-syntax-rule (t_2it l r) (- (* t_2 (-  l r))))
+              (define-syntax-rule (t_2it3 l r o) (- (* t_2 (+ (-  l r) o))))
+              (define-syntax-rule (t_2itlr UI ZSI) (* (flvr ue UI) (flvr buf ZSI)))
+              (define-syntax-rule (t_2ito) (- (* c2 (- (flvr ue A4J+) (flvr q ip1)))
+                                              (* c2 (- (flvr ue A4J-) (flvr q im1)))))
 
-              (define-syntax-rule (mid d__t_1 __con2X A t_2itother cit)
-                (flvs!+ rhs (+ idx A)
-                  (cit d__t_1 u A)
-                  (cit2 __con2X buf)
-                  (t_2it (t_2itlr ip1 (* A jsize3))
-                         (t_2itlr im1 (* A jsize3))
-                         (t_2itother (t_2ito)))))
+              (define-syntax-rule (mid d__t_1 __con2X A t_2itother)
+                   (let* ([AJ (* A jsize3)]
+                          [AJ+ (+ ip1 AJ)]
+                          [AJ- (+ im1 AJ)])
+                (flvs!+ rhs (+ didx A)
+                  (citS3 d__t_1 ue AJ+ AJ AJ-)
+                  (citS3 __con2X buf AJ+ AJ AJ-)
+                  (t_2it3 (t_2itlr AJ+ idx2+)
+                         (t_2itlr AJ- idx2-)
+                         (t_2itother (t_2ito))))))
 
-              (flvs!+ forcing idx 
-                   (t_2it (vrit ue ip1 f1jsize3)
-                          (vrit ue im1 f1jsize3) 0)
-                   (dit d_1t_1 0))
+              (flvs!+ forcing didx 
+                   (t_2it (flvr ue idx2+)
+                          (flvr ue idx2-))
+                   (citS d_1t_1 ue))
 
-              (mid d_2t_1 _con_0 1 t_2m1 cit)
-              (mid d_3t_1 _con_1 2 t_2m2 cit)
-              (mid d_4t_1 _con_2 3 t_2m3 cit)
+              (mid d_2t_1 _con_0 1 t_2m1)
+              (mid d_3t_1 _con_1 2 t_2m2)
+              (mid d_4t_1 _con_2 3 t_2m3)
 
-              (let ([x4jsize3 (* 4 jsize3) ])
-                (define-syntax-rule (t_2_4 s)
-                  (* (vrit buf s iijsize3) (- (* c1 (vrit ue s x4jsize3)) (* c2 (vr q s)))))
-                (flvs!+ forcing (+ idx 4)
-                     (t_2it (t_2_4 ip1) (t_2_4 im1) 0)
-                     (* 0.5 (cit __con3 buf 0))
-                     (cit __con4 cuf 0)
-                     (xit __con4 x4jsize3)
-                     (dit d_5t_1 x4jsize3)))))
+              (define-syntax-rule (t4clause I1 I2 I3)
+                (* (flvr buf I1) (- (* c1 (flvr ue I2)) (* c2 (flvr q I3)))))
+              (flvs!+ forcing (+ didx 4)
+                   (t_2it (t4clause idx2+ A4J+ ip1) (t4clause idx2- A4J- im1))
+                   (* 0.5 (citS __con3 buf))
+                   (citS __con4 cuf)
+                   (citS3 __con5 buf A4J+ A4J A4J-)
+                   (citS3 d_5t_1 ue A4J+ A4J A4J-))))
+
 ;//---------------------------------------------------------------------
 ;//            Fourth-order dissipation
 ;//---------------------------------------------------------------------
-          (for ([m (in-range 5)])
-            (let* ([ii 1]
-                   [imj (+ ii (* m jsize3))]
-                   [idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-              (flvs!+ forcing idx 
-                (- (* dssp (+ (* 5.0 (flvr ue imj)) 
-                              (* -4.0 (flvr ue (+ imj 1))))
-                              (flvr ue (+ imj 2))))))
-            (let* ([ii 2]
-                   [imj (+ ii (* m jsize3))]
-                   [idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-              (flvs!+ forcing idx 
-                (- (* dssp (+ (* -4.0 (flvr ue (+ imj 1)))
-                              (*  6.0 (flvr ue imj))
-                              (* -4.0 (flvr ue (+ imj 1)))
-                              (flvr ue (+ imj 2))))))))
-          (for* ([m (in-range 5)]
-                 [ii (in-range 3 (- (vr grid_points giidx) 3))])
-            (let* ([imj (+ ii (* m jsize3))]
-                   [idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-              (flvs!+ forcing idx 
-                (- (* dssp (+ (flvr ue (- imj 2)) 
-                              (* -4.0 (flvr ue (- imj 1))))
-                              (*  6.0 (flvr ue imj))
-                              (* -4.0 (flvr ue (+ imj 1)))
-                              (flvr ue (+ imj 2)))))))
-          (for ([m (in-range 5)])
-            (let* ([ii (- (vr grid_points giidx) 3)]
-                   [imj (+ ii (* m jsize3))]
-                   [idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-              (flvs!+ forcing idx 
-                (- (* dssp (+ (flvr ue (- imj 2)) 
-                              (* -4.0 (flvr ue (- imj 1)))
-                              (*  6.0 (flvr ue imj))
-                              (* -4.0 (flvr ue (+ imj 1))))))))
-            (let* ([ii (- (vr grid_points giidx) 3)]
-                   [imj (+ ii (* m jsize3))]
-                   [idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-              (flvs!+ forcing idx 
-                (- (* dssp (+ (flvr ue (- imj 2)) 
-                              (* -4.0 (flvr ue (- imj 1)))
-                              (*  5.0 (flvr ue imj))))))))))
+    (fourth-order-dissipation ii NII2 forcing ue i j k m midx idx
+              (+ ii (* m jsize3)) (+ midx 1) (+ midx 2) (- midx 1) (- midx 2) 
+              (+ m idx) (+ (* i isize1) (* j jsize1) (* k ksize1)) dssp)
+))))
 
   (define-syntax-rule (KZERO a ...) 0)
   (define-syntax-rule (KIDENT a ...) (begin a ...))
 
   (let ([dtemp (make-flvector 5 0.0)])
-    (for ([k (in-range 1 (- (vr grid_points 2) 2) )])
-        (for ([j (in-range 1 (- (vr grid_points 1) 2))])
-           (body2 i 0 tx2 jsize3 jsize3 ue buf cuf q c1 c2 i j k 1 dtemp
-              KIDENT KZERO KZERO
-              xxcon1 xxcon2 xxcon2 xxcon3 xxcon4 xxcon5
-              dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1)
-)
+   (body2 i j k nx2 ny2 nz2 tx2 jsize3 jsize3 ue buf cuf q c1 c2 i j k 1 dtemp
+      KIDENT KZERO KZERO
+      xxcon1 xxcon2 xxcon2 xxcon3 xxcon4 xxcon5
+      dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1)
 
-        (for ([i (in-range 1 (- (vr grid_points 0) 2))])
-            (body2 j 1 ty2 (* 2 jsize3) jsize3 ue buf cuf q c1 c2 i j k 2 dtemp 
-              KZERO KIDENT KZERO
-              yycon2 yycon1 yycon2 yycon3 yycon4 yycon5
-              dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1)
-))
+    (body2 j i k ny2 nx2 nz2 ty2 (* 2 jsize3) jsize3 ue buf cuf q c1 c2 i j k 2 dtemp 
+      KZERO KIDENT KZERO
+      yycon2 yycon1 yycon2 yycon3 yycon4 yycon5
+      dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1)
 
-    (for ([j (in-range 1 (- (vr grid_points 1) 2))])
-        (for ([i (in-range 1 (- (vr grid_points 0) 2))])
-            (body2 k 2 tz2 (* 3 jsize3) jsize3 ue buf cuf q c1 c2 i j k 3 dtemp
-              KZERO KZERO KIDENT 
-              zzcon2 zzcon2 zzcon1 zzcon3 zzcon4 zzcon5
-              dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
-)))
+    (body2 k i j nz2 nx2 ny2 tz2 (* 3 jsize3) jsize3 ue buf cuf q c1 c2 i j k 3 dtemp
+      KZERO KZERO KIDENT 
+      zzcon2 zzcon2 zzcon1 zzcon3 zzcon4 zzcon5
+      dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1))
 
     (for* ([k (in-range 1 (- (vr grid_points 2) 2))]
            [j (in-range 1 (- (vr grid_points 1) 2))]
@@ -545,13 +719,13 @@ dnxm1 dnym1 dnzm1)
            [r5 (flvr rhs (+ 4 idx))]
            [t1 (* bt r3)]
            [t2 (* 0.5 (+ r4 r5))])
-      (flvs! rhs (+ 0 idx) (- r2)
+      (flvs! rhs (+ 0 idx) (- r2))
       (flvs! rhs (+ 1 idx) r1)
       (flvs! rhs (+ 2 idx) (* bt (- r4 r5)))
       (flvs! rhs (+ 3 idx) (- t2 t1))
-      (flvs! rhs (+ 4 idx) (+ t1 t2))))))
+      (flvs! rhs (+ 4 idx) (+ t1 t2)))))
 
-(define (pinvr nz2 ny2 nx2 isize1 jsize1 ksize1 rhs )
+(define (pinvr nz2 ny2 nx2 isize1 jsize1 ksize1 rhs bt)
   (for* ([k (in-range 1 (add1 nz2))]
          [j (in-range 1 (add1 ny2))]
          [i (in-range 1 (add1 nx2))])
@@ -570,8 +744,8 @@ dnxm1 dnym1 dnzm1)
       (flvs! rhs (+ 4 idx) (+ t1 t2)))))
 
 (define (compute_rhs grid_points isize1 jsize1 ksize1 jsize2 ksize2 u us vs ws rho_i square qs speed
-c2c2 rhs forcing nx2 ny2 nz2
-    tx2 con43
+c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
+    tx2 ty2 tz2 con43 dt
     dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
     xxcon2 xxcon3 xxcon4 xxcon5
     dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
@@ -584,7 +758,7 @@ c2c2 rhs forcing nx2 ny2 nz2
          [i (in-range (vr grid_points 0))])
     (let* ([idx (+ (* i isize1) (* j jsize1) (* k ksize1))]
            [idx2 (+ i (* j jsize2) (* k ksize2))]
-           [rho_inv (/ 1.0 idx)]
+           [rho_inv (/ 1.0 (flvr u idx))]
            [u1 (flvr u (+ idx 1))]
            [u2 (flvr u (+ idx 2))]
            [u3 (flvr u (+ idx 3))]
@@ -596,144 +770,125 @@ c2c2 rhs forcing nx2 ny2 nz2
       (flvs! ws idx2 (* rho_inv u3))
       (flvs! square idx2 sq)
       (flvs! qs idx2 (* rho_inv sq))
-      (flvs! speed idx2 (sqrt (* c2c2 rho_inv (- u4 sq))))
-  
+      (flvs! speed idx2 (sqrt (* c1c2 rho_inv (- u4 sq))))
+
       (for* ([m (in-range 5)])
-        (flvs! rhs (+ m idx) (vr forcing (+ m idx))))))
+        (flvs! rhs (+ m idx) (flvr forcing (+ m idx))))))
+
+
+  (define-syntax-rule (KZERO a ...) 0)
+  (define-syntax-rule (KIDENT a ...) (begin a ...))
 
   (define-syntax-rule (DISSIP kk jj ii nkk2 njj2 nii2 u rhs
     i j k A zs
-    idxz+ idxz- idx2z+ idx2z-
+    idxz+ idxz- idxz+2 idxz-2 idx2z+ idx2z-
     d_1t_1 d_2t_1 d_3t_1 d_4t_1 d_5t_1
-    __con21 __con22  __con23 __con3 __con4 __con5
+    _con_0 _con_1 _con_2 __con3 __con4 __con5
     t_2 t_2m1 t_2m2 t_2m3)
 
     (for ([kk (in-range 1 (add1 nkk2))])
       (for ([jj (in-range 1 (add1 njj2))])
         (for ([ii (in-range 1 (add1 nii2))])
           (let* ([idx (+ (* i isize1) (* j jsize1) (* k ksize1))]
-                 [idx2 (+ i (* j jsize1) (* k ksize1))])
+                 [idx2 (+ i (* j jsize2) (* k ksize2))]
+                 [idx4 (+ idx 4)]
+                 [idxz+4 (+ idxz+ 4)]
+                 [idxz-4 (+ idxz- 4)])
 
-            (define-syntax-rule (vrit V I1 I2) (vr V (+ I1 I2)))
-            (define-syntax-rule (cit C V A)
-              (* C (+ (- (vrit V idxz+ A) (* 2.0 (vrit V idz A)) (vrit V idxz- A)))))
-            (define-syntax-rule (cit2 C V)
-              (* C (+ (- (vr V idx2z+) (* 2.0 (vr V idx2)) (vr V idx2z-)))))
-            (define-syntax-rule (cit3 C F V)
-              (* C (+ (- (F (vr V idx2z+)) (* 2.0 (F (vr V idx2))) (F (vr V idx2z-))))))
+            (define-syntax-rule (citA C C1 C2 C3) (* C (+ (- C1 (* 2.0 C2) C3))))
+            (define-syntax-rule (cit3S C V I1 I2 I3) (citA C (flvr V I1) (flvr V I2) (flvr V I3)))
+            (define-syntax-rule (cit2 C V)  (citA C (flvr V idx2z+) (flvr V idx2) (flvr V idx2z-)))
+            (define-syntax-rule (cit3 C F V)(citA C (F (flvr V idx2z+)) (F (flvr V idx2)) (F (flvr V idx2z-))))
             (define-syntax-rule (t_2m)
-              (* (+ (- (vr u (+ idxz+ 4)) (vr square idx2z+) (vr u (+ idxz- 4))) (vr square idx2z-)) c2))
+              (* (+    (flvr u idxz+4) (-  (flvr square idx2z+))
+                    (- (flvr u idxz-4))    (flvr square idx2z-)) c2))
+            (define-syntax-rule (t_2it l r) (- (* t_2 (-  l r))))
+            (define-syntax-rule (t_2it3 l r o) (- (* t_2 (+ (-  l r) o))))
+            (define-syntax-rule (t_2itlr UI ZSI) (* (flvr u UI) (flvr square ZSI)))
 
-            (define-syntax-rule (mid d__t_1 __con2X A t_2m_)
-              (flvs!+ rhs (+ idx A)
-                (cit d__t_1 u A)
-                (cit2 __con2X zs)
-                (- (* t_2 (+ (- (* (vr u (+ idxz+ A) (vr zs idx2+))) 
-                                (* (vr u (+ idxz- A) (vr zs idx2-)))) 
-                             t_2m_)))))
+            (define-syntax-rule (mid d__t_1 __con2X AA t_2m_)
+              (let ([idxA (+ idx AA)]
+                    [idxz+A (+ idxz+ AA)]
+                    [idxz-A (+ idxz- AA)])
+                (flvs!+ rhs (+ idx AA)
+                  (cit3S d__t_1 u idxz+A idxA idxz-A)
+                  (cit2 __con2X zs)
+                  (t_2it3 (t_2itlr idxz+A idx2z+)
+                          (t_2itlr idxz-A idx2z-)
+                           (t_2m_ (t_2m))))))
         
             (flvs!+ rhs idx
-              (cit d_1t_1 u 0)
-              (- (* t_2 (- (vr u (+ idxz+ A)) 
-                           (vr u (+ idxz- A))))))
+              (cit3S d_1t_1 u idxz+ idx idxz-)
+              (t_2it (flvr u (+ idxz+ A)) 
+                     (flvr u (+ idxz- A))))
 
-            ;(mid d_2t_1 __con21 1 t_2m1)
-            ;(mid d_3t_1 __con22 2 t_2m2)
-            ;(mid d_4t_1 __con23 3 t_2m3)
+            (mid d_2t_1 _con_0 1 t_2m1)
+            (mid d_3t_1 _con_1 2 t_2m2)
+            (mid d_4t_1 _con_2 3 t_2m3)
 
+            (define-syntax-rule (CONS5W UI RI) (* (flvr u UI) (flvr rho_i RI)))
+            (define-syntax-rule (T_25W UI RI) (* (- (* c1 (flvr u UI))
+                                                    (* c2 (flvr square RI)))
+                                                 (flvr zs RI)))
             (flvs!+ rhs (+ idx 4)
-              (cit d_5t_1 u 4)
+              (cit3S d_5t_1 u idxz+4 idx4 idxz-4)
               (cit2 __con3 qs)
               (cit3 __con4 sqr zs)
-              (* __con5 (+ (-
-                  (*     (vr u (+ idxz+ 4)) (vr rho_i idx2z+))
-                  (* 2.0 (vr u (+ idxz  4)) (vr rho_i idx2z )))
-                  (*     (vr u (+ idxz- 4)) (vr rho_i idx2z-))))
-              (- (* t_2 (- (* (- (* c1 (vr u (+ idxz+ 4))) 
-                                 (* c2 (vr square idx2z+))) 
-                              (vr zs idxz+))
-                           (* (- (* c1 (vr u (+ idxz- 4))) 
-                                 (* c2 (vr square idx2z-))) 
-                              (vr zs idxz-))))))))
+              (citA __con5 (CONS5W idxz+4 idx2z+)
+                           (CONS5W idx4 idx2)
+                           (CONS5W idxz-4 idx2z-))
+              (t_2it (T_25W idxz+4 idx2z+)
+                     (T_25W idxz-4 idx2z-)))))
 
-        (let* ([ii 1]
-               [idx (+ (* i isize1) (* j jsize1) (* k ksize1))])
-          (for ([m (in-range 5)])
-            (let ([midx (+ m idx)])
-              (flvs! rhs midx (- (* dssp (+ (*  5.0 (flvr u midx))
-                                            (* -4.0 (flvr u midx+)))
-                                                    (flvr u midx+2)))))))
-        (let* ([ii 2]
-               [idx (+ (* i isize1) (* j jsize1) (* k ksize1))])
-          (for ([m (in-range 5)])
-            (let ([midx (+ m idx)])
-              (flvs! rhs midx (- (* dssp (+ (* -4.0 (flvr u midx-)) 
-                                            (*  6.0 (flvr u midx))
-                                            (* -4.0 (flvr u midx+))
-                                                    (flvr u midx+2))))))))
-        (for ([ii (in-range 3 (sub1 nii2))])
-          (for ([m (in-range 5)])
-            (let ([midx (+ m idx)])
-              (flvs! rhs midx (- (* dssp (+         (flvr u midx-2)
-                                            (* -4.0 (flvr u midx-))
-                                            (*  6.0 (flvr u midx))
-                                            (*  4.0 (flvr u midx+))
-                                                    (flvr u midx+2))))))))
-        (let* ([ii (sub1 ii_2)]
-               [idx (+ (* i isize1) (* j jsize1) (* k ksize1))])
-          (for ([m (in-range 5)])
-            (let ([midx (+ m idx)])
-              (flvs! rhs midx (- (* dssp (+         (flvr u midx-2)
-                                            (* -4.0 (flvr u midx-))
-                                            (*  6.0 (flvr u midx))
-                                            (* -4.0 (flvr u midx+)))))))))
-        (let* ([ii ii_2]
-               [idx (+ (* i isize1) (* j jsize1) (* k ksize1))])
-          (for ([m (in-range 5)])
-            (let ([midx (+ m idx)])
-              (flvs! rhs midx (- (* dssp (+         (flvr u midx-2)
-                                            (* -4.0 (flvr u midx-))
-                                            (*  5.0 (flvr u midx))))))))))))
+        (fourth-order-dissipation ii nii2 rhs u i j k m midx idx 
+        (+ m idx) (+ m idxz+) (+ m idxz+2) (+ m idxz-) (+ m idxz-2)
+        midx (+ (* i isize1) (* j jsize1) (* k ksize1)) dssp))))
 
   (DISSIP k j i nz2 ny2 nx2 u rhs
     i j k 1 us 
     (+ (* (+ i 1) isize1) (* j jsize1) (* k ksize1)) 
     (+ (* (- i 1) isize1) (* j jsize1) (* k ksize1))
+    (+ (* (+ i 2) isize1) (* j jsize1) (* k ksize1)) 
+    (+ (* (- i 2) isize1) (* j jsize1) (* k ksize1))
     (+ (+ i 1) (* j jsize2) (* k ksize2)) 
     (+ (- i 1) (* j jsize2) (* k ksize2))
     dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
     (* xxcon2 con43) xxcon2 xxcon2 xxcon3 xxcon4 xxcon5
-    tx2 t_2m 0 0)
+    tx2 KIDENT KZERO KZERO)
 
   (DISSIP k i j nz2 nx2 ny2 u rhs
     i j k 2 vs 
     (+ (* i isize1) (* (+ j 1) jsize1) (* k ksize1)) 
     (+ (* i isize1) (* (- j 1) jsize1) (* k ksize1))
+    (+ (* i isize1) (* (+ j 2) jsize1) (* k ksize1)) 
+    (+ (* i isize1) (* (- j 2) jsize1) (* k ksize1))
     (+ i (* (+ j 1) jsize2) (* k ksize2)) 
     (+ i (* (- j 1) jsize2) (* k ksize2))
     dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
     yycon2 (* yycon2 con43) yycon2 yycon3 yycon4 yycon5
-    ty2 0 t_2m 0)
+    ty2 KZERO KIDENT KZERO)
 
   (DISSIP i j k nx2 ny2 nz2 u rhs
     i j k 3 ws 
     (+ (* i isize1) (* j jsize1) (* (+ k 1) ksize1)) 
-    (+ (* i iszie1) (* j jsize1) (* (- k 1) ksize1))
+    (+ (* i isize1) (* j jsize1) (* (- k 1) ksize1))
+    (+ (* i isize1) (* j jsize1) (* (+ k 2) ksize1)) 
+    (+ (* i isize1) (* j jsize1) (* (- k 2) ksize1))
     (+ i (* j jsize2) (* (+ k 1) ksize2)) 
     (+ i (* j jsize2) (* (- k 1) ksize2))
     dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
     zzcon2 zzcon2 (* zzcon2 con43) zzcon3 zzcon4 zzcon5
-    tz2 0 0 t_2m)
+    tz2 KZERO KZERO KIDENT)
 
   (for* ([k (in-range 1 (add1 nz2))]
          [j (in-range 1 (add1 ny2))]
          [i (in-range 1 (add1 nx2))]
          [m (in-range 5)])
     (let* ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-      (flvs!* fhs idx dt))))
+      (flvs!* rhs idx dt))))
   
 
-(define (txinvr)
+(define (txinvr nz2 ny2 nx2 isize1 jsize1 ksize1 jsize2 ksize2 rho_i us vs ws qs speed rhs c2 bt)
   (for* ([k (in-range 1 (add1 nz2))]
          [j (in-range 1 (add1 ny2))]
          [i (in-range 1 (add1 nx2))])
@@ -752,7 +907,7 @@ c2c2 rhs forcing nx2 ny2 nz2
            [r3 (flvr rhs (+ 2 idx))]
            [r4 (flvr rhs (+ 3 idx))]
            [r5 (flvr rhs (+ 4 idx))]
-           [t1 (* c2 ac2inv (+ (- (* (vr qs idx2) r1) (* uu r2) (* vv r3) (* ww r4)) r5))]
+           [t1 (* c2 ac2inv (+ (- (* (flvr qs idx2) r1) (* uu r2) (* vv r3) (* ww r4)) r5))]
            [t2 (* bt ru1 (- (* uu r1) r2))]
            [t3 (* bt ru1 ac t1)])
 
@@ -762,7 +917,7 @@ c2c2 rhs forcing nx2 ny2 nz2
       (flvs! rhs (+ 3 idx) (- t2 t3))
       (flvs! rhs (+ 4 idx) (+ t1 t3)))))
 
-(define (tzetar)
+(define (tzetar u nz2 ny2 nx2 isize1 jsize1 ksize1 jsize2 ksize2 us vs ws qs speed rhs bt c2iv)
   (for* ([k (in-range 1 (add1 nz2))]
          [j (in-range 1 (add1 ny2))]
          [i (in-range 1 (add1 nx2))])
@@ -770,7 +925,7 @@ c2c2 rhs forcing nx2 ny2 nz2
            [idx2 (+ i (* j jsize2) (* k ksize2))]
 
            [xvel (flvr us idx2)]
-           [uvel (flvr vs idx2)]
+           [yvel (flvr vs idx2)]
            [zvel (flvr ws idx2)]
            [ac (flvr speed idx2)]
            [ac2u (sqr ac)]
@@ -781,8 +936,8 @@ c2c2 rhs forcing nx2 ny2 nz2
            [r4 (flvr rhs (+ 3 idx))]
            [r5 (flvr rhs (+ 4 idx))]
 
-           [uzik1 (vr i idx)]
-           [btiz  (* bt usik1)]
+           [uzik1 (flvr u idx)]
+           [btuz  (* bt uzik1)]
 
            [t1 (* (/ btuz ac) (+ r4 r5))]
            [t2 (+ r3 t1)]
@@ -791,25 +946,22 @@ c2c2 rhs forcing nx2 ny2 nz2
       (flvs! rhs (+ 1 idx) (+ (- (* uzik1 r2)) (* xvel t2)))
       (flvs! rhs (+ 2 idx) (+ (* uzik1 r1) (* yvel t2))) 
       (flvs! rhs (+ 3 idx) (+ (* zvel t2) t3))
-      (flvs! rhs (+ 4 idx) (+ (* uzik1 (- (* yvel r1) (*xvel r2)))
-                              (* (vr qs idx2) t2)
+      (flvs! rhs (+ 4 idx) (+ (* uzik1 (- (* yvel r1) (* xvel r2)))
+                              (* (flvr qs idx2) t2)
                               (* c2iv ac2u t1)
                               (* zvel t3))))))
-(define (verify class rnm2 no_time_steps)
+(define (verify class rnm2 no_time_steps dt)
   (define xcrdif (make-flvector 5 0.0))
   (define xcedif (make-flvector 5 0.0))
   (define xcr (make-flvector 5 0.0))
   (define xce (make-flvector 5 0.0))
 
-    int m;
-    int verified=-1;
-    char clss = 'U';
 ;;;//---------------------------------------------------------------------
 ;;;//   compute the error norm and the residual norm, and exit if not printing
 ;;;//---------------------------------------------------------------------
-    (error_norm xce)
+    (error-norm xce)
     (compute_rhs)
-    (rhs_norm xcr)
+    (rhs-norm xcr)
 
     (for ([m (in-range 5)]) 
       (flvs!/ xcr m dt)
@@ -899,10 +1051,10 @@ c2c2 rhs forcing nx2 ny2 nz2
       0.00067)]))
 
     (for ([m (in-range 5)]) 
-      (let ([xcrr (vr xcrref m)]
-            [xcer (vr xceref m)])
-        (flvs! xcrdif m (/ (abs (- (vr xcr m) xcrr) xcrr)))
-        (flvs! xcedif m (/ (abs (- (vr xce m) xcer) xcer)))))
+      (let ([xcrr (flvr xcrref m)]
+            [xcer (flvr xceref m)])
+        (flvs! xcrdif m (/ (abs (- (flvr xcr m) xcrr) xcrr)))
+        (flvs! xcedif m (/ (abs (- (flvr xce m) xcer) xcer)))))
 
   (define  epsilon 1.0E-8)
   (if (not (= class #\U))
@@ -937,28 +1089,33 @@ c2c2 rhs forcing nx2 ny2 nz2
 )
 
 (define-syntax-rule (__solve kk jj ii nkk2 njj2 nii2 i j k inverter
-_s rho_
+_s rho_ rhs lhs speed lhsp lhsm
 d__ d_5 d_1
 dtt_1 dtt_2
 c2dtt_
+isize1 jsize1 ksize1 jsize2 ksize2 jsize4
+rho_i cv con43 c1c5 d_max
+comz1 comz4 comz5 comz6
+idxz+ idxz- idxz+2 idxz-2 idx2z+ idx2z-
 )
   (for ([kk (in-range 1 (add1 nkk2))])
     (for ([jj (in-range 1 (add1 njj2))])
       (for ([ii (in-range (+ nii2 2))])
-        (let* ([idx2 (+ i (* j jsize1) (* k ksize1))]
-               [ri (* c3c4 (flvr rho_i idx2))])
+        (let* ([idx2 (+ i (* j jsize2) (* k ksize2))]
+               [ru1 (* c3c4 (flvr rho_i idx2))])
           (flvs! cv ii (flvr _s idx2))
-          (flvs! rho_ ii (dmax1 (+ d__ (* con43 ru1))
-                                (+ d_5 (* c1c5  ru1))  
-                                d_1))))
-      (lhsinit (sub1 nii2))
+          (flvs! rho_ ii (flmax* (+ d__ (* con43 ru1))
+                                 (+ d_5 (* c1c5  ru1))  
+                                 (+ d_max ru1)  
+                                 d_1))))
+      (lhsinit (sub1 nii2) jsize4 lhs lhsp lhsm)
       (for ([ii (in-range 1 (+ nii2 1))])
         (let ([iij (* ii jsize4)]
               [ii+ (add1 ii)]
               [ii- (sub1 ii)])
         (flvs! lhs (+ 0 iij) 0.0)
         (flvs! lhs (+ 1 iij) (- (- (* dtt_2 (flvr cv ii-)) (* dtt_1 (flvr rho_ ii-)))))
-        (flvs! lhs (+ 2 iij) (+ 1.0 (* c2dtt_ (vr rho_ ii))))
+        (flvs! lhs (+ 2 iij) (+ 1.0 (* c2dtt_ (flvr rho_ ii))))
         (flvs! lhs (+ 3 iij)    (- (* dtt_2 (flvr cv ii+)) (* dtt_1 (flvr rho_ ii+))))
         (flvs! lhs (+ 4 iij) 0.0)))
 
@@ -970,7 +1127,7 @@ c2dtt_
         (flvs!+ lhs (+ 4 iij) comz1)
 
         (flvs!- lhs (+ 1 iij+) comz4)
-        (flvs!+ lhs (+ 2 iij+) comz5)
+        (flvs!+ lhs (+ 2 iij+) comz6)
         (flvs!- lhs (+ 3 iij+) comz4)
         (flvs!+ lhs (+ 4 iij+) comz1))
     
@@ -986,7 +1143,7 @@ c2dtt_
             [iij (* ii jsize4)]
             [iij+ (* (add1 ii) jsize4)])
         (flvs!+ lhs (+ 0 iij) comz1)
-        (flvs!- lhs (+ 1 iij) comz3)
+        (flvs!- lhs (+ 1 iij) comz4)
         (flvs!+ lhs (+ 2 iij) comz6)
         (flvs!- lhs (+ 3 iij) comz4)
 
@@ -996,8 +1153,8 @@ c2dtt_
       
       (for ([ii (in-range 1 (add1 nii2))])
         (let ([iij (* ii jsize4)]
-              [d+ (* dtt_2 (vr speed idx2z+))]
-              [d- (* dtt_2 (vr speed idx2z-))])
+              [d+ (* dtt_2 (flvr speed idx2z+))]
+              [d- (* dtt_2 (flvr speed idx2z-))])
           (flvs! lhsp (+ 0 iij)    (flvr lhs (+ 0 iij)))
           (flvs! lhsp (+ 1 iij) (- (flvr lhs (+ 1 iij)) d-))
           (flvs! lhsp (+ 2 iij)    (flvr lhs (+ 2 iij)))
@@ -1010,6 +1167,13 @@ c2dtt_
           (flvs! lhsm (+ 3 iij) (- (flvr lhs (+ 3 iij)) d+))
           (flvs! lhsm (+ 4 iij)    (flvr lhs (+ 4 iij)))))
 
+;;;//---------------------------------------------------------------------
+;;;//                          FORWARD ELIMINATION  
+;;;//---------------------------------------------------------------------
+;;;
+;;;//---------------------------------------------------------------------
+;;;//      perform the Thomas algorithm; first, FORWARD ELIMINATION     
+;;;//---------------------------------------------------------------------
       (for ([ii (in-range nii2)])
         (let* ([iij (* ii jsize4)]
                [ii1j (* (add1 ii) jsize4)]
@@ -1024,17 +1188,17 @@ c2dtt_
           (flvs!- lhs (+ 3 ii1j) (* (flvr lhs (+ 1 ii1j)) (flvr lhs (+ 4 iij))))
           (for ([m (in-range 3)])
             (let* ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-              (flvs!- rhs idxz+ (* (flvr lhs (+ 1 ii1j)) (flvr lhs idx)))))
+              (flvs!- rhs idxz+ (* (flvr lhs (+ 1 ii1j)) (flvr rhs idx)))))
           (flvs!- lhs (+ 1 ii2j) (* (flvr lhs ii2j) (flvr lhs (+ 3 iij))))
           (flvs!- lhs (+ 2 ii2j) (* (flvr lhs ii2j) (flvr lhs (+ 4 iij))))
           (for ([m (in-range 3)])
             (let* ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-              (flvs!- rhs idxz+2 (* (flvr lhs ii2j) (flvr lhs idx)))))))
+              (flvs!- rhs idxz+2 (* (flvr lhs ii2j) (flvr rhs idx)))))))
 
       (let* ([ii nii2]
              [iij (* ii jsize4)]
              [ii1j (* (add1 nii2) jsize4)]
-             [fac1 (/ 1.0 (vr lhs (+ 2 iij)))])
+             [fac1 (/ 1.0 (flvr lhs (+ 2 iij)))])
         (flvs!* lhs (+ 3 iij) fac1)  
         (flvs!* lhs (+ 4 iij) fac1)  
 
@@ -1047,19 +1211,22 @@ c2dtt_
 
         (for ([m (in-range 3)])
           (let* ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-            (flvs!- rhs idxz+ (* (flvr lhs (+ 1 ii1j)) (flvr lhs idx)))))
+            (flvs!- rhs idxz+ (* (flvr lhs (+ 1 ii1j)) (flvr rhs idx)))))
         (let ([fac2 (/ 1.0 (flvr lhs (+ 2 ii1j)))])
             (for ([m (in-range 3)])
             (let* ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
               (flvs!* rhs idxz+ fac2)))))
 
+;;;//---------------------------------------------------------------------
+;;;//      do the u+c and the u-c factors                 
+;;;//---------------------------------------------------------------------
       (for ([ii (in-range (sub1 nii2))])
         (let* ([iij (* ii jsize4)]
                [ii1j (* (add1 ii) jsize4)]
                [ii2j (* (+ ii 2) jsize4)])
           (let* ([fac1 (/ 1.0 (flvr lhsp (+ 2 iij)))]
                  [m 3]
-                 [idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
+                 [midx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
             (flvs!* lhsp (+ 3 iij) fac1)
             (flvs!* lhsp (+ 4 iij) fac1)
             (flvs!* rhs midx (+ 4 iij) fac1)
@@ -1072,7 +1239,7 @@ c2dtt_
 
           (let* ([fac1 (/ 1.0 (flvr lhsm (+ 2 iij)))]
                  [m 4]
-                 [idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
+                 [midx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
             (flvs!* lhsm (+ 3 iij) fac1)
             (flvs!* lhsm (+ 4 iij) fac1)
             (flvs!* rhs midx (+ 4 iij) fac1)
@@ -1083,12 +1250,15 @@ c2dtt_
             (flvs!- lhsm (+ 2 ii2j)    (+ (flvr lhsm ii2j) (flvr lhsm (+ 4 iij))))
             (flvs!- rhs midx (+ 4 iij) (* (flvr lhsm ii2j) (flvr rhs midx))))))
 
+;;;//---------------------------------------------------------------------
+;;;//         And again the last two rows separately
+;;;//---------------------------------------------------------------------
       (let* ([ii nii2]
              [iij (* ii jsize4)]
              [ii1j (* (add1 ii) jsize4)])
         (let* ([fac1 (/ 1.0 (flvr lhsp (+ 2 iij)))]
                [m 3]
-               [idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
+               [midx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
           (flvs!* lhsp (+ 3 iij) fac1)
           (flvs!* lhsp (+ 4 iij) fac1)
           (flvs!* rhs midx (+ 4 iij) fac1)
@@ -1097,7 +1267,7 @@ c2dtt_
           (flvs!- rhs midx (+ 4 iij) (* (flvr lhsp (+ 1 ii1j)) (flvr rhs midx))))
         (let* ([fac1 (/ 1.0 (flvr lhsm (+ 2 iij)))]
                [m 4]
-               [idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
+               [midx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
           (flvs!* lhsm (+ 3 iij) fac1)
           (flvs!* lhsm (+ 4 iij) fac1)
           (flvs!* rhs midx (+ 4 iij) fac1)
@@ -1108,19 +1278,27 @@ c2dtt_
         (flvs!/ rhs (+ 3 idxz+) (flvr lhsp (+ 2 ii1j)))
         (flvs!/ rhs (+ 4 idxz+) (flvr lhsm (+ 2 ii1j))))
 
+
+;;;//---------------------------------------------------------------------
+;;;//                         BACKSUBSTITUTION 
+;;;//---------------------------------------------------------------------
       (let* ([ii nii2]
              [iij (* ii jsize4)]
              [ii1j (* (add1 ii) jsize4)]
-             [idx (* i isize1) (* j jsize1) (* k ksize1)])
+             [idx (+ (* i isize1) (* j jsize1) (* k ksize1))])
         (for ([m (in-range 3)])
           (let* ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-            (flvs!- rhs idx (* (flvr lhs (+ 3 ii1j)) (flvr lhs idx)))))
+            (flvs!- rhs idx (* (flvr lhs (+ 3 ii1j)) (flvr rhs idx)))))
 
         (flvs!- rhs (+ 3 idx)    (+ (flvr lhsp (+ 3 iij)) (flvr rhs (+ 3 idx))))
         (flvs!- rhs (+ 4 idx)    (+ (flvr lhsm (+ 3 iij)) (flvr rhs (+ 4 idx)))))
 
+;;;//---------------------------------------------------------------------
+;;;//      The first three factors
+;;;//---------------------------------------------------------------------
       (for ([ii (in-range (- nii2 1) -1 -1)])
         (let* ([iij (* ii jsize4)]
+               [idx (+ (* i isize1) (* j jsize1) (* k ksize1))]
                [idx1 (+ (* (+ i 1) isize1) (* j jsize1) (* k ksize1))]
                [idx2 (+ (* (+ i 2) isize1) (* j jsize1) (* k ksize1))])
           (for ([m (in-range 3)])
@@ -1132,28 +1310,80 @@ c2dtt_
                                    (* (flvr lhsp (+ 4 iij)) (flvr rhs (+ 3 idx2))))
           (flvs!- rhs (+ 4 idx)    (* (flvr lhsm (+ 3 iij)) (flvr rhs (+ 4 idx1)))
                                    (* (flvr lhsm (+ 4 iij)) (flvr rhs (+ 4 idx2))))))
-      (inverter))))
+      inverter)))
 
 ; (- nz2 1)  = grid_points[2]-3
 ; nz2        = grid_points[2]-2
 ; (+ nz2 1)  = grid_points[2]-1
 
-(define (x_solve)
-  (__solve k j i nz2 ny2 nx2 i j k ninvr
-    us rhon
-    dx2 dx5 dx1))
+(define (x_solve nz2 ny2 nx2 us rhon 
+dx2 dx5 dx1 dttx1 dttx2 c2dttx1
+isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+rho_i cv con43 c1c5 dxmax rhs lhs speed lhsp lhsm
+comz1 comz4 comz5 comz6
+)
+(define-values (i j k) (values 0 0 0))
+  (__solve k j i nz2 ny2 nx2 i j k 
+    (ninvr nz2 ny2 nx2 isize1 jsize1 ksize1 rhs bt)
+    us rhon rhs lhs speed lhsp lhsm
+    dx2 dx5 dx1 dttx1 dttx2 c2dttx1
+    isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+    rho_i cv con43 c1c5 dxmax
+    comz1 comz4 comz5 comz6
+    (+ (* (+ i 1) isize1) (* j jsize1) (* k ksize1))
+    (+ (* (- i 1) isize1) (* j jsize1) (* k ksize1))
+    (+ (* (+ i 2) isize1) (* j jsize1) (* k ksize1))
+    (+ (* (- i 2) isize1) (* j jsize1) (* k ksize1))
+    (+ (+ i 1) (* j jsize2) (* k ksize2))
+    (+ (- i 1) (* j jsize2) (* k ksize2))
+))
+(define (y_solve nz2 ny2 nx2 vs rhoq
+dy2 dy5 dy1 dtty1 dtty2 c2dtty1
+isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+rho_i cv con43 c1c5 dymax rhs lhs speed lhsp lhsm
+comz1 comz4 comz5 comz6
+)
+(define-values (i j k) (values 0 0 0))
+  (__solve k j i nz2 ny2 nx2 i j k 
+    (pinvr nz2 ny2 nx2 isize1 jsize1 ksize1 rhs bt)
+    vs rhoq rhs lhs speed lhsp lhsm
+    dy2 dy5 dy1 dtty1 dtty2 c2dtty1
+    isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+    rho_i cv con43 c1c5 dymax
+    comz1 comz4 comz5 comz6
+    (+ (* i isize1) (* (+ j 1) jsize1) (* k ksize1))
+    (+ (* i isize1) (* (- j 1) jsize1) (* k ksize1))
+    (+ (* i isize1) (* (+ j 2) jsize1) (* k ksize1))
+    (+ (* i isize1) (* (- j 2) jsize1) (* k ksize1))
+    (+ i (* (+ j 1) jsize2) (* k ksize2))
+    (+ i (* (- j 1) jsize2) (* k ksize2))
+))
 
-(define (y_solve)
-  (__solve k i j nz2 nx2 ny2 i j k pinvr
-    vs rhoq
-    dy3 dy5 dy1))
+(define (z_solve nz2 ny2 nx2 ws rhos
+dz2 dz5 dz1 dttz1 dttz2 c2dttz1
+isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+rho_i cv con43 c1c5 dzmax rhs lhs speed lhsp lhsm
+comz1 comz4 comz5 comz6
+u us vs qs
+)
+(defconst c2iv 2.5)
+(define-values (i j k) (values 0 0 0))
+  (__solve j i k ny2 nx2 nz2 i j k 
+    (tzetar u nz2 ny2 nx2 isize1 jsize1 ksize1 jsize2 ksize2 us vs ws qs speed rhs bt c2iv)
+    ws rhos rhs lhs speed lhsp lhsm
+    dz2 dz5 dz1 dttz1 dttz2 c2dttz1
+    isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+    rho_i cv con43 c1c5 dzmax
+    comz1 comz4 comz5 comz6
+    (+ (* i isize1) (* j jsize1) (* (+ k 1) ksize1))
+    (+ (* i isize1) (* j jsize1) (* (- k 1) ksize1))
+    (+ (* i isize1) (* j jsize1) (* (+ k 2) ksize1))
+    (+ (* i isize1) (* j jsize1) (* (- k 2) ksize1))
+    (+ i (* j jsize2) (* (+ k 1) ksize2))
+    (+ i (* j jsize2) (* (- k 1) ksize2))
+))
 
-(define (z_solve)
-  (__solve j i k ny2 nx2 nz2 i j k tzetar
-    ws rhos
-    dz4 dz5 dz1))
-
-(define (checkSum arr)
+(define (checkSum arr nz2 ny2 nx2 isize1 jsize1 ksize1)
   (for*/fold ([csum 0.0]) ([k (in-range (add1 nz2))]
          [j (in-range (add1 ny2))]
          [i (in-range (add1 nx2))]
