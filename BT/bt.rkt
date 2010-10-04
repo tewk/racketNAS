@@ -113,7 +113,6 @@
     [(_ a b ...) #'(flmax a (flmax* b ...))]))
 
 (define (get-class-size CLASS)
-  (printf "~a\n" CLASS)
   (case CLASS 
     [(#\S) (values  12  0.01    60)]
     [(#\W) (values  24  0.0008 200)]
@@ -399,7 +398,6 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
     zzcon2 zzcon3 zzcon4 zzcon5
 )
-  ;;(pflv rhs "RHS1")
   (x_solve nz2 ny2 nx2
     jsize1 ksize1 
     isize2 jsize2 ksize2 
@@ -408,6 +406,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     u square rhs lhs fjac njac rho_i qs 
     c1 c2 c3c4 c1345 con43 dt 
     tx1 tx2 dx1 dx2 dx3 dx4 dx5)
+  (pflve rhs "X")
   (x_solve nz2 nx2 ny2
     jsize1 ksize1 
     isize2 jsize2 ksize2 
@@ -434,7 +433,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
 ;;;//      defaults from parameters
 ;;;//---------------------------------------------------------------------
 ;      (get-input-pars)
-      (printf "No input file inputsp.data,Using compiled defaults\n")
+      (printf "No input file inputbt.data, Using compiled defaults\n")
       (printf "Size: ~a X ~a X ~a\n" nx ny nz)
       (printf "Iterations: ~a dt: ~a\n" niter dt)
       (initialize u nx ny nz isize2 jsize2 ksize2 dnxm1 dnym1 dnzm1)
@@ -465,7 +464,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       (let* ([verified (verify CLASS niter dt compute_rhs_thunk
         nx2 ny2 nz2 isize2 jsize2 ksize2 u rhs dnzm1 dnym1 dnxm1)])
         (if verified 
-            (printf "Verification Successful~n") 
+            (printf "BT.~a Verification Successful~n" CLASS) 
             (printf "Verification Failed~n"))
         (let* ([time (/ (read-timer 1) 1000)]
                [results (new-BMResults bmname CLASS nx ny nz niter time 
@@ -1110,14 +1109,14 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
   (define  epsilon 1.0E-8)
   (if (not (equal? class #\U))
     (begin
-      (printf " Verification being performed for class ~a\n" class)
-      (printf " Accuracy setting for epsilon = ~a\n" epsilon)
+      (printf "Verification being performed for class ~a\n" class)
+      (printf "Accuracy setting for epsilon = ~a\n" epsilon)
       (if ((abs (- dt dtref)) . <= . epsilon)
         #t
         (begin
           (printf "DT does not match the reference value of ~a\n" dtref)
           #f))
-      (printf " Comparison of RMS-norms of residual\n"))
+      (printf "Comparison of RMS-norms of residual\n"))
     (begin
       (printf " Unknown CLASS")
       (printf " RMS-norms of residual")
@@ -1125,7 +1124,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
 ;  (printf " RMS-norms of solution error\n")
   (for ([m (in-range (flvector-length xcr))])
     (printf "~a. ~a ~a ~a\n" m (fr xcr m) (fr xcrref m) (fr xcrdif m)))
-  (printf " Comparison of RMS-norms of solution error\n")
+  (printf "Comparison of RMS-norms of solution error\n")
   (for ([m (in-range (flvector-length xce))])
     (printf "~a. ~a ~a ~a\n" m (fr xce m) (fr xceref m) (fr xcedif m)))
 )
@@ -1139,6 +1138,10 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
 (define-syntax-case (__solve NAME R i j k kk jj ii nkk2 njj2 nii2)
 
 #'(define (NAME nkk2 njj2 nii2 jsize1 ksize1 isize2 jsize2 ksize2 isize4 jsize4 ksize4 isize jsize ksize IISIZE u square rhs lhs fjac njac rho_i qs c1 c2 c3c4 c1345 con43 dt t_1 t_2 d_1 d_2 d_3 d_4 d_5)
+  (define-syntax-case (PFLV R V D)
+    (when (= R 1)
+      #'(pflv V D)))
+  
   (for ([kk (in-range 1 (add1 nkk2))])
     (for ([jj (in-range 1 (add1 njj2))])
       (define-syntax-case (MODDET R MACRO N1 N2 N3 V1 V2 V3 BODY (... ...))
@@ -1232,14 +1235,17 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
               )
 
           (define-syntax-case (R43IT A a (... ...))
+            (printf "~a ~a\n" (syntax->datum #'A) (syntax->datum #'R))
             (if (= (syntax->datum #'A) (syntax->datum #'R))
               #'(* con43 a (... ...))
               #'(* a (... ...))))
            
           (define-syntax-rule (NJACM A)
             (ROTASN njac A A
-              (R43IT A c3c4 tmp2 (fr u (+ A ijk2)))
-              (R43IT A c3c4 tmp1)
+              ;(R43IT A c3c4 tmp2 (fr u (+ A ijk2)))
+              ;(R43IT A c3c4 tmp1)
+              0.0
+              0.0
               0.0
               0.0
               0.0))
@@ -1248,7 +1254,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
           (DIAG0 njac 0 0.0 0.0 0.0 0.0 0.0)
           ;(NJACM 1)
           ;(NJACM 2)
-          ;(NJACM 3)
+          (NJACM R)
           (DIAG0 njac 4
             (+ (- (* (- (R43IT 1 c3c4) c1345) tmp3 (sqr (fr u ijk21))))
                (- (* (- (R43IT 2 c3c4) c1345) tmp3 (sqr (fr u ijk22))))
