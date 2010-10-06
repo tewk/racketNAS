@@ -108,7 +108,7 @@
         (printf "* Threads requested = ~a" (BMResults-numthreads results)) 
         void)
     (widtho "*")
-    (widtho "* Please send all erros/feedbacks to:")
+    (widtho "* Please send all errors/feedbacks to:")
     (widtho "* NPB Racket Working Team")
     (widtho "* tewk@cs.utah.edu")
     (printf "****************************************************************\n")
