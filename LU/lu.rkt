@@ -17,6 +17,9 @@
 (require (for-meta 2 scheme/base))
 
 (require (only-in scheme/flonum make-flvector make-shared-flvector shared-flvector flvector-length flvector))
+(require (rename-in scheme/flonum
+                    [flvector-ref fr] 
+                    [flvector-set! f!]))
 
 #|
 (require scheme/fixnum scheme/flonum)
@@ -38,7 +41,6 @@
 |#
 
 #|
-|#
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
@@ -49,6 +51,7 @@
                     [unsafe-fl* fl*]
                     [unsafe-fl/ fl/]
 ))
+|#
  
 (define (get-class-size CLASS)
   (case CLASS 
@@ -134,6 +137,7 @@
           [b (make-shared-flvector s3 0.0)]
           [c (make-shared-flvector s3 0.0)]
           [d (make-shared-flvector s3 0.0)]
+          [tv (make-shared-flvector (* 5 (+ isiz1 1) isiz2) 0.0)]
 
           [flux (make-shared-flvector (* 5 isiz1)  0.0)]
           [rsdnm (make-shared-flvector 5 0.0)]
@@ -150,10 +154,15 @@
           [c4 1.0]
           [c5 1.4]
           [c1c5 (* c1 c5)]
+          [c3c4 (* c3 c4)]
           [r43 (/ 4.0 3.0)]
           [c1345 (* c1 c3 c4 c5)]
           [c34 (* c3 c4)]
+          [omega 1.2]
 
+          [dnxm1 (/ 1.0  (- nx 1))]
+          [dnym1 (/ 1.0  (- ny 1))]
+          [dnzm1 (/ 1.0  (- nz 1))]
           [dxi (/ 1.0  (- nx 1))]
           [deta (/ 1.0  (- ny 1))]
           [dzeta (/ 1.0  (- nz 1))]
@@ -184,6 +193,21 @@
           [dz3  dz1]
           [dz4  dz1]
           [dz5  dz1]
+          [dx1tx1 (* dx1 tx1)]
+          [dx2tx1 (* dx2 tx1)]
+          [dx3tx1 (* dx3 tx1)]
+          [dx4tx1 (* dx4 tx1)]
+          [dx5tx1 (* dx5 tx1)]
+          [dy1ty1 (* dy1 ty1)]
+          [dy2ty1 (* dy2 ty1)]
+          [dy3ty1 (* dy3 ty1)]
+          [dy4ty1 (* dy4 ty1)]
+          [dy5ty1 (* dy5 ty1)]
+          [dz1tz1 (* dz1 tz1)]
+          [dz2tz1 (* dz2 tz1)]
+          [dz3tz1 (* dz3 tz1)]
+          [dz4tz1 (* dz4 tz1)]
+          [dz5tz1 (* dz5 tz1)]
 ;;;//---------------------------------------------------------------------
 ;;;//   fourth difference dissipation
 ;;;//---------------------------------------------------------------------
@@ -191,14 +215,28 @@
  
 
       ;(get-input-pars)
-      (domain)
+      (domain nx ny nz nx ny nz)
 
       ;(set-coefficients)
-      (set-boundary-variables)
-      (set-initial-values
-      (compute-forcing-term)
+      (set-boundary-variables u nx ny nz isize1 jsize1 ksize1)
+      (set-initial-values u nx ny nz dnzm1 dnym1 dnxm1 isize1 jsize1 ksize1)
+      (compute-forcing-term-exact rsd frct flux nz ny nx
+        c1 c2 c1c5 c3c4 dssp
+        isize1 jsize1 ksize1 isize2 jsize3 ksize3
+        tx2 tx3 ty2 ty3 tz2 tz3
+        dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+        dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+        dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
+        dnzm1 dnym1 dnxm1)
 
-      (sssor)
+      (sssor a b c d u rsd rsdnm tv nx ny nz niter niter dt omega isize1 jsize1 ksize1 isize4 jsize4 ksize4
+        rho_i flux qs frct
+        c1 c2 c1c5 c3c4 dssp
+        isize2 jsize3 ksize3
+        tx2 tx3 ty2 ty3 tz2 tz3
+        dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+        dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+        dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
 
       (compute-error)
 
@@ -217,7 +255,7 @@
                                        serial 
                                        num-threads 
                                        -1)]) 
-            (print-results results))))))))
+            (print-results results)))))))
 
 (define (get-mflops total-time niter nx ny nz)
   (if (not (= total-time 0.0))
@@ -575,20 +613,21 @@
 
 (define-syntax-rule (IJK1 I J K IS JS KS) (+ (* I IS) (* J JS) (* K KS)))
 
-(define (erhs rsd frct flux nz ny nx
+(define (compute-forcing-term-exact rsd frct flux nz ny nx
     c1 c2 c1c5 c3c4 dssp
     isize1 jsize1 ksize1 isize2 jsize3 ksize3
     tx2 tx3 ty2 ty3 tz2 tz3
     dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
     dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
-    dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
-  (compute-forcing-term)
+    dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
+    dnzm1 dnym1 dnxm1)
+  (compute-forcing-term frct rsd nz ny nx dnzm1 dnym1 dnxm1 isize1 jsize1 ksize1)
 #|
   (for ([k (in-range nz)])
     (for ([j (in-range ny)])
       (for ([i (in-range nx)])
         (for ([m (in-range 5)])
-          (f! rsd midx (vr frct midx)))
+          (f! rsd midx (fr frct midx)))
       (let ([tmp (/ 1.0 (fr u idx))])
         (f! rho_i idx tmp)
         (f! qs ijk3 (* 0.50 tmp (+ (sqr (fr u (+ 1 idx)))
@@ -635,7 +674,7 @@
       (for ([i (in-range nx)])
         (for ([m (in-range 5)])
           (let ([midx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-          (f! rsd midx (vr frct midx)))))))
+          (f! rsd midx (fr frct midx)))))))
 
   (define ijk3 0)
   (define i-jk1 0) 
@@ -664,7 +703,7 @@
     isize1 jsize1 ksize1 isize2 jsize3 ksize3
     tz2 tz3 dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1))
 
-(define (exact i j k u0 nx ny nz)
+(define (exactKBT i j k u0 nx ny nz)
  (let ([xi   (/ (- i 1) (- nx 1))]
        [eta  (/ (- j 1) (- ny 1))]
        [zeta (/ (- k 1) (- nz 1))])
@@ -692,7 +731,7 @@
   (for* ([k (kstR nz)]
          [j (jstR ny)]
          [i (istR nx)])
-    (exact (add1 i) (add1 j) (add1 k) u000ijk)
+    (exactKBT (add1 i) (add1 j) (add1 k) u000ijk nx ny nz)
     (for ([m (in-range 5)])
       (let* ([mijk1 (+ m (* i isize1) (* j jsize1) (* k ksize1))])
         (f!+ errnm m (sqr (- (fr u000ijk m) (fr u mijk1)))))))
@@ -1065,22 +1104,22 @@ tx1dx5 ty1dy5 tz1dz5
       E1
       E2
       (for ([m (in-range 5)])
-        (f! u IDX1 (vr temp1 m))
-        (f! u IDX2 (vr temp2 m)))))
+        (f! u IDX1 (fr temp1 m))
+        (f! u IDX2 (fr temp2 m)))))
 
   (INITIT i j k m j i ny nx
-    (exact (+ i 1) (+ j 1) 1 temp1)
-    (exact (+ i 1) (+ j 1) nz temp2)
+    (exactKBT (+ i 1) (+ j 1) 1 temp1 nx ny nz)
+    (exactKBT (+ i 1) (+ j 1) nz temp2 nx ny nz)
     (+ m (* i isize1) (* j jsize1) 0)
     (+ m (* i isize1) (* j jsize1) (* (- nz 1) ksize1)))
   (INITIT i j k m k i nz nx
-    (exact (+ i 1) 1 (+ k 1) temp1)
-    (exact (+ i 1) ny (+ k 1) temp2)
+    (exactKBT (+ i 1) 1 (+ k 1) temp1 nx ny nz)
+    (exactKBT (+ i 1) ny (+ k 1) temp2 nx ny nz)
     (+ m (* i isize1) 0 (* k ksize1))
     (+ m (* i isize1) (* (- ny 1) jsize1) (* k ksize1)))
   (INITIT i j k m k j nz ny
-    (exact 1 (+ j 1) (+ k 1) temp1)
-    (exact nx (+ j 1) (+ k 1) temp2)
+    (exactKBT 1 (+ j 1) (+ k 1) temp1 nx ny nz)
+    (exactKBT nx (+ j 1) (+ k 1) temp2 nx ny nz)
     (+ m 0 (* j jsize1) (* k ksize1))
     (+ m (* (- nx 1) isize1) (* j jsize1) (* k ksize1))))
 
@@ -1098,24 +1137,32 @@ tx1dx5 ty1dy5 tz1dz5
           (let ([eta (* j dnym1)])
             (for ([i (in-range 1 (- nx 1))])
               (let ([xi (* i dnxm1)])
-                  (exact 1 (+ j 1) (+ k 1) ue_1jk)
-                  (exact nx (+ j 1) (+ k 1) ue_nx0jk)
-                  (exact (+ i 1) 1 (+ k 1) ue_i1k)
-                  (exact (+ i 1) ny (+ k 1) ue_iny0k)
-                  (exact (+ i 1) (+ j 1) 1 ue_ij1)
-                  (exact (+ i 1) (+ j 1) nz ue_ijnz0)
+                  (exactKBT 1 (+ j 1) (+ k 1) ue_1jk nx ny nz)
+                  (exactKBT nx (+ j 1) (+ k 1) ue_nx0jk nx ny nz)
+                  (exactKBT (+ i 1) 1 (+ k 1) ue_i1k nx ny nz)
+                  (exactKBT (+ i 1) ny (+ k 1) ue_iny0k nx ny nz)
+                  (exactKBT (+ i 1) (+ j 1) 1 ue_ij1 nx ny nz)
+                  (exactKBT (+ i 1) (+ j 1) nz ue_ijnz0 nx ny nz)
                 (for ([m (in-range 5)])
                   (let ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))]
-                        [pxi (+ (- 1.0 xi) * (fr ue_1jk m) (* xi (fr ue_nx0jk m)))]
-                        [peta (+ (- 1.0 eta) * (fr ue_i1k m) (* eta (fr ue_iny0k m)))]
-                        [pzeta (+ (- 1.0 zeta) * (fr ue_ij1 m) (* zeta (fr ue_ijnz0 m)))])
+                        [pxi (+ (* (- 1.0 xi) (fr ue_1jk m)) (* xi (fr ue_nx0jk m)))]
+                        [peta (+ (* (- 1.0 eta) (fr ue_i1k m)) (* eta (fr ue_iny0k m)))]
+                        [pzeta (+ (* (- 1.0 zeta) (fr ue_ij1 m)) (* zeta (fr ue_ijnz0 m)))])
                     (f! u idx (+ pxi peta pzeta
                                  (- (* pxi peta))
                                  (- (* peta pzeta))
                                  (- (* pzeta pxi))
                                  (* pxi peta pzeta)))))))))))))
 
-(define (sssor a b c d u rsd rsdnm tv nx ny nz itmax inorm dt omega isize1 jsize1 ksize1 isize4 jsize4 ksize4)
+(define (sssor a b c d u rsd rsdnm tv nx ny nz itmax inorm dt omega isize1 jsize1 ksize1 isize4 jsize4 ksize4
+          rho_i flux qs frct
+          c1 c2 c1c5 c3c4 dssp
+          isize2 jsize3 ksize3
+          tx2 tx3 ty2 ty3 tz2 tz3
+          dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+          dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+          dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
+
   (define delunm (make-flvector 5 0.0))
   (define tmat (make-flvector (* 5 5) 0.0))
   (define tolrsd (make-flvector 5 0.00000001))
@@ -1129,7 +1176,13 @@ tx1dx5 ty1dy5 tz1dz5
       (f! c idx 0.0)
       (f! d idx 0.0)))
 
-  (rhs)
+  (rhs u rho_i rsd flux qs frct nz ny nx
+    c1 c2 c1c5 c3c4 dssp
+    isize1 jsize1 ksize1 isize2 jsize3 ksize3
+    tx2 tx3 ty2 ty3 tz2 tz3
+    dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+    dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+    dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
 
   (l2norm nx ny nz rsd rsdnm isize1 jsize1 ksize1)
 
