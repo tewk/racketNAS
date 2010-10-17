@@ -6,10 +6,10 @@
 
 (require racket/future)
 (require racket/vector)
-(require "../bm-args.ss")
-(require "../bm-results.ss")
-(require "../rand-generator.ss")
-(require "places-mpi.ss")
+(require "../bm-args.rkt")
+(require "../bm-results.rkt")
+(require "../rand-generator.rkt")
+(require "places-mpi.rkt")
 
 (provide main
          sort-start-worker)
@@ -192,7 +192,7 @@
             master-hist)))]
     [(PLACES) 
       (let ()
-        (define places (for/list ([i (in-range 1 num-threads)]) (place "integer-sort.ss" 'sort-start-worker)))
+        (define places (for/list ([i (in-range 1 num-threads)]) (place "integer-sort.rkt" 'sort-start-worker)))
         (define comgrp (build-hypercube-comgrp num-threads places))
         (broadcast comgrp (list max-key (add1 max-iterations)))
 

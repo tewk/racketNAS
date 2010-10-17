@@ -2,11 +2,11 @@
 
 (provide main)
   
-(require "../bm-args.ss") 
-(require "../bm-results.ss") 
-(require "../rand-generator.ss")
-(require "../timer.ss")
-(require "../parallel-utils.ss")
+(require "../bm-args.rkt") 
+(require "../bm-results.rkt") 
+(require "../rand-generator.rkt")
+(require "../timer.rkt")
+(require "../parallel-utils.rkt")
 (require racket/match)
 (require racket/math)
 (require racket/place)
