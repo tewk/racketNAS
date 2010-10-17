@@ -104,9 +104,8 @@
       [(1)  (widtho "* Verification      = Successful")] 
       [(0)  (widtho "* Verification      = Failed")] 
       [else (widtho "* Verification      = Not Performed")])
-    (if (not (BMResults-serial results)) 
-        (printf "* Threads requested = ~a" (BMResults-numthreads results)) 
-        void)
+    (unless (BMResults-serial results) 
+      (widtho "* Threads requested = ~a" (BMResults-numthreads results)))
     (widtho "*")
     (widtho "* Please send all errors/feedbacks to:")
     (widtho "* NPB Racket Working Team")

@@ -288,18 +288,17 @@
         (for/fold ([nnza nnza]) ([ivelt (in-range 1 (add1 nzv))])
           (define jcol (vr iv ivelt))
           (let ([nnza (if (and (jcol . >= . firstcol) (jcol . <= . lastcol))
-            (begin
-              (for/fold ([nnza nnza]) ([ivelt1 (in-range 1 (add1 nzv))])
-                (define irow (vr iv ivelt1))
-                (if (and (irow . >= . firstrow) (irow . <= . lastrow))
-                  (let ([nnza (add1 nnza)])
-                    (++ nnza2)
-                    (when (nnza2 . > . nz) (warn nnza2 nz iouter))
-                    (vs! acol nnza2 jcol)
-                    (vs! arow nnza2 irow)
-                    (flvs! aelt nnza2 (* size (flvr v ivelt) (flvr v ivelt1)))
-                    nnza)
-                  nnza)))
+            (for/fold ([nnza nnza]) ([ivelt1 (in-range 1 (add1 nzv))])
+              (define irow (vr iv ivelt1))
+              (if (and (irow . >= . firstrow) (irow . <= . lastrow))
+                (let ([nnza (add1 nnza)])
+                  (++ nnza2)
+                  (when (nnza2 . > . nz) (warn nnza2 nz iouter))
+                  (vs! acol nnza2 jcol)
+                  (vs! arow nnza2 irow)
+                  (flvs! aelt nnza2 (* size (flvr v ivelt) (flvr v ivelt1)))
+                  nnza)
+                nnza))
             nnza)])
           nnza)))])
         (values (* size ratio) nnza)))])
@@ -421,12 +420,6 @@
           (vs! rowstr (add1 j) (+ nza (vr rowstr 1)))
           (values nza jajp1))))))
 
-(define (pflv v)
-  (for ([i (in-range (flvector-length v))])
-    (printf "~a " (flvr v i)))
-  (newline)
-  (flush-output))
-
 (define (conj-grad nrows ncols naa colidx rowstr x z a p q r)
   
   (define rho (for/fold ([rho 0.0]) ([j (in-range 1 (+ naa 1))])
@@ -491,18 +484,13 @@
   (define-syntax-rule (n0-only body ...)
     (begin
       (comgrp-tell grp)
-      ;(barrier2 grp)
       (if (= id 0)
         (begin0
           (let () body ...)
           (comgrp-wait grp))
-          ;(barrier2 grp))
         (begin 
           (comgrp-wait grp)
-          ;(barrier2 grp)
-          
-          #f))
-))
+          #f))))
 
   (define num-threads np)
   (define-values (ALPHA BETA RHO TNORM1 TNORM2 ZETA) (values 0 1 2 3 4 5))

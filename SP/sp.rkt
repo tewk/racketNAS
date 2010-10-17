@@ -13,17 +13,6 @@
 ;(require racket/place-utils)
 (require (for-syntax scheme/base))
 
-(define (pflve v d)
-  (for ([i (in-range (flvector-length v))])
-    (printf "~a ~a ~a\n" d i (flvr v i)))
-  (flush-output)
-  (exit 1))
-
-(define (pflv v d)
-  (for ([i (in-range (flvector-length v))])
-    (printf "~a ~a ~a\n" d i (flvr v i)))
-  (flush-output))
-
 #|
 (require (only-in scheme/flonum make-flvector 
                                 make-shared-flvector 
@@ -69,6 +58,7 @@
                     [unsafe-fl/ fl/]
 ))
 |#
+
 (define-syntax (defconst stx)
   (syntax-case stx ()
     [(_ x v)
@@ -89,13 +79,7 @@
 (defconst c1c5 (* 1.4 1.4))
 (defconst c3c4 (* 0.1 1.0))
 (defconst c1345 (* 1.4 1.4 0.1 1.0))
- 
-(define-syntax-rule (vidx3 i1 i2 i3 n1 n2) (+ i1 (* n1 (+ i2 (* n2 i3)))))
-(define-syntax-rule (vr3 v i1 i2 i3 n1 n2) (vr v (vidx3 i1 i2 i3 n1 n2)))
-(define-syntax-rule (vidx off i1 i2 i3 n1 n2) (+ off (vidx3 i1 i2 i3 n1 n2)))
-(define-syntax-rule (vro3 v off i1 i2 i3 n1 n2) (vr v (+ off (vidx3 i1 i2 i3 n1 n2))))
 
-;(define-syntax-rule (flvs! v idx val) (flvector-set! v idx val))
 (define-syntax-rule (flvs!+ v idx_ val ...)
   (let ([idx idx_])
     (flvs! v idx (+ (flvr v idx) val ...))))
@@ -219,8 +203,6 @@
   (let ([args (parse-cmd-line-args argv "Conjugate Gradient")]) 
     (run-benchmark args)))
 
-(define make-fxvector make-vector)
-
 (define (run-benchmark args) 
   (define maxlevel 11)
   (let ([bmname "SP"]
@@ -231,12 +213,10 @@
   (let-values ([(problem_size dt_default niter_default) (get-class-size CLASS)])
     (let* (
           [niter niter_default]
-          ;[niter 10]
           [dt dt_default]
           [IMAX problem_size]
           [JMAX problem_size]
           [KMAX problem_size]
-          [grid_points (make-fxvector 3 problem_size)]
           [nx problem_size]
           [ny problem_size]
           [nz problem_size]
@@ -378,7 +358,6 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
     zzcon2 zzcon3 zzcon4 zzcon5
 )
-  ;;(pflv rhs "RHS1")
   (txinvr nz2 ny2 nx2 isize1 jsize1 ksize1 jsize2 ksize2 rho_i us vs ws qs speed rhs c2 bt)
   (x_solve nz2 ny2 nx2 us rhon 
     dx2 dx5 dx1 dttx1 dttx2 c2dttx1
@@ -396,9 +375,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     rho_i cv con43 c1c5 dzmax rhs lhs speed lhsp lhsm
     comz1 comz4 comz5 comz6
     u us vs qs)
-  (add nz2 ny2 nx2 isize1 jsize1 ksize1 u rhs)
-;  (pflve rhs "RHS2")
-  )
+  (add nz2 ny2 nx2 isize1 jsize1 ksize1 u rhs))
 
       (print-banner bmname args) 
 
@@ -1139,7 +1116,6 @@ comz1 comz4 comz5 comz6
 idxz+ idxz- idxz+2 idxz-2 idx2z+ idx2z-
 )
   (begin
-  (define (pflv2 a b) (when (= KBT 1) (pflve a b)))
   (for ([kk (in-range 1 (add1 nkk2))])
     (for ([jj (in-range 1 (add1 njj2))])
       (for ([ii (in-range (+ nii2 2))])
@@ -1394,7 +1370,6 @@ idxz+ idxz- idxz+2 idxz-2 idx2z+ idx2z-
                                 (* (flvr lhsp (+ 4 iij)) (flvr rhs (+ 3 idx2))))
           (flvs!- rhs (+ 4 idx) (* (flvr lhsm (+ 3 iij)) (flvr rhs (+ 4 idx1)))
                                 (* (flvr lhsm (+ 4 iij)) (flvr rhs (+ 4 idx2))))))))
-;      (pflv2 lhs "LHS-2")
       inverter))
 
 ; (- nz2 2)  = grid_points[2]-4
