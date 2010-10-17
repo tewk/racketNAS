@@ -9,8 +9,6 @@
 (require "../parallel-utils.rkt")
 (require racket/match)
 (require racket/math)
-;(require racket/place)
-;(require racket/place-utils)
 (require (for-syntax scheme/base))
 
 #|
@@ -32,21 +30,8 @@
                                 shared-flvector
                                 flvector-length
                                 flvector
-                                flmax)
-#;
-   (filtered-in
-    (lambda (name) (regexp-replace #rx"unsafe-" name ""))
-    scheme/unsafe/ops))
+                                flmax))
 
-(require (rename-in scheme/unsafe/ops
-                    [unsafe-vector-ref vr] 
-                    [unsafe-vector-set! vs!]
-                    [unsafe-flvector-ref flvr] 
-                    [unsafe-flvector-set! flvs!]))
-#|
-|#
-
-#|
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
@@ -56,8 +41,10 @@
                     [unsafe-fl- fl-]
                     [unsafe-fl* fl*]
                     [unsafe-fl/ fl/]
+                    [unsafe-fx+ fx+]
+                    [unsafe-fx- fx-]
+                    [unsafe-fx* fx*]
 ))
-|#
 
 (define-syntax (defconst stx)
   (syntax-case stx ()
@@ -336,48 +323,18 @@
           [comz5 (* 5.0 dtdssp)]
           [comz6 (* 6.0 dtdssp)]
 )
-(define (compute_rhs_thunk)
-(compute_rhs isize1 jsize1 ksize1 jsize2 ksize2 u us vs ws rho_i square qs speed
-c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
-    tx2 ty2 tz2 con43 dt
-    dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
-    xxcon2 xxcon3 xxcon4 xxcon5
-    dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
-    yycon2 yycon3 yycon4 yycon5
-    dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
-    zzcon2 zzcon3 zzcon4 zzcon5))
+  (define (compute_rhs_thunk)
+    (compute_rhs isize1 jsize1 ksize1 jsize2 ksize2 u us vs ws rho_i square qs speed
+        c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
+        tx2 ty2 tz2 con43 dt
+        dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+        xxcon2 xxcon3 xxcon4 xxcon5
+        dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+        yycon2 yycon3 yycon4 yycon5
+        dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
+        zzcon2 zzcon3 zzcon4 zzcon5))
 
-(define (adi_serial)
-(compute_rhs isize1 jsize1 ksize1 jsize2 ksize2 u us vs ws rho_i square qs speed
-c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
-    tx2 ty2 tz2 con43 dt
-    dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
-    xxcon2 xxcon3 xxcon4 xxcon5
-    dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
-    yycon2 yycon3 yycon4 yycon5
-    dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
-    zzcon2 zzcon3 zzcon4 zzcon5
-)
-  (txinvr nz2 ny2 nx2 isize1 jsize1 ksize1 jsize2 ksize2 rho_i us vs ws qs speed rhs c2 bt)
-  (x_solve nz2 ny2 nx2 us rhon 
-    dx2 dx5 dx1 dttx1 dttx2 c2dttx1
-    isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
-    rho_i cv con43 c1c5 dxmax rhs lhs speed lhsp lhsm
-    comz1 comz4 comz5 comz6)
-  (y_solve nz2 ny2 nx2 vs rhoq
-    dy3 dy5 dy1 dtty1 dtty2 c2dtty1
-    isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
-    rho_i cv con43 c1c5 dymax rhs lhs speed lhsp lhsm
-    comz1 comz4 comz5 comz6)
-  (z_solve nz2 ny2 nx2 ws rhos
-    dz4 dz5 dz1 dttz1 dttz2 c2dttz1
-    isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
-    rho_i cv con43 c1c5 dzmax rhs lhs speed lhsp lhsm
-    comz1 comz4 comz5 comz6
-    u us vs qs)
-  (add nz2 ny2 nx2 isize1 jsize1 ksize1 u rhs))
-
-      (print-banner bmname args) 
+   (print-banner bmname args) 
 
 ;;;//---------------------------------------------------------------------
 ;;;//      Read input file (if it exists), else take
@@ -389,28 +346,34 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       (printf "Iterations: ~a dt: ~a\n" niter dt)
       (initialize u nx ny nz isize1 jsize1 ksize1 dnxm1 dnym1 dnzm1)
       (exact_rhs nx2 ny2 nz2 isize1 jsize1 ksize1 jsize3 forcing dnxm1 dnym1 dnzm1 ue buf cuf q
-  rhs u c1 c2 0.25
-  tx2 ty2 tz2
-  xxcon1 xxcon2 xxcon3 xxcon4 xxcon5
-  dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
-  yycon1 yycon2 yycon3 yycon4 yycon5
-  dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
-  zzcon1 zzcon2 zzcon3 zzcon4 zzcon5
-  dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
-;;;//---------------------------------------------------------------------
-;;;//      do one time step to touch all code, and reinitialize
-;;;//---------------------------------------------------------------------
-      (adi_serial)
+        rhs u c1 c2 0.25
+        tx2 ty2 tz2
+        xxcon1 xxcon2 xxcon3 xxcon4 xxcon5
+        dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+        yycon1 yycon2 yycon3 yycon4 yycon5
+        dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+        zzcon1 zzcon2 zzcon3 zzcon4 zzcon5
+        dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
 
-      (initialize u nx ny nz isize1 jsize1 ksize1 dnxm1 dnym1 dnzm1)
-
-      (timer-start 1)
-      (for ([step (in-range 1 (add1 niter))])
-        (when (or (zero? (modulo step 20)) (= step 1) (= step niter))
-          (printf "Time step ~a\n" step))
-        (adi_serial))
-      (timer-stop 1)
-
+      (CGspawn (if serial 0 num-threads) sp-body 
+        u us vs ws cv rhon rhoq rhos rho_i square qs speed rhs forcing lhs lhsp lhsm
+        nx ny nz 
+        nx2 ny2 nz2 
+        c1 c2 dssp c1c2 c1c5 con43 
+        tx2 ty2 tz2 dt niter
+        dx2 dx5 dx1 dttx1 dttx2 c2dttx1
+        dy3 dy5 dy1 dtty1 dtty2 c2dtty1
+        dz4 dz5 dz1 dttz1 dttz2 c2dttz1
+        dxmax dymax dzmax 
+        dnxm1 dnym1 dnzm1
+        comz1 comz4 comz5 comz6
+        isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+        dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+        xxcon2 xxcon3 xxcon4 xxcon5
+        dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+        yycon2 yycon3 yycon4 yycon5
+        dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
+        zzcon2 zzcon3 zzcon4 zzcon5)
 
       (let* ([verified (verify CLASS niter dt compute_rhs_thunk
         nx2 ny2 nz2 isize1 jsize1 ksize1 u rhs dnzm1 dnym1 dnxm1)])
@@ -427,6 +390,78 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                                        -1)]) 
             (print-results results) 
             (when #f (print-timers))))))))
+
+(define (sp-body cg u us vs ws cv rhon rhoq rhos rho_i square qs speed rhs forcing lhs lhsp lhsm
+      nx ny nz 
+      nx2 ny2 nz2 
+      c1 c2 dssp c1c2 c1c5 con43 
+      tx2 ty2 tz2 dt niter
+      dx2 dx5 dx1 dttx1 dttx2 c2dttx1
+      dy3 dy5 dy1 dtty1 dtty2 c2dtty1
+      dz4 dz5 dz1 dttz1 dttz2 c2dttz1
+      dxmax dymax dzmax 
+      dnxm1 dnym1 dnzm1
+      comz1 comz4 comz5 comz6
+      isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+      dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+      xxcon2 xxcon3 xxcon4 xxcon5
+      dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+      yycon2 yycon3 yycon4 yycon5
+      dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
+      zzcon2 zzcon3 zzcon4 zzcon5)
+
+  (define (adi)
+    (compute_rhs isize1 jsize1 ksize1 jsize2 ksize2 u us vs ws rho_i square qs speed
+      c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
+      tx2 ty2 tz2 con43 dt
+      dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+      xxcon2 xxcon3 xxcon4 xxcon5
+      dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+      yycon2 yycon3 yycon4 yycon5
+      dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
+      zzcon2 zzcon3 zzcon4 zzcon5)
+
+    (txinvr nz2 ny2 nx2 isize1 jsize1 ksize1 jsize2 ksize2 rho_i us vs ws qs speed rhs c2 bt)
+      (x_solve nz2 ny2 nx2 us rhon 
+        dx2 dx5 dx1 dttx1 dttx2 c2dttx1
+        isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+        rho_i cv con43 c1c5 dxmax rhs lhs speed lhsp lhsm
+        comz1 comz4 comz5 comz6)
+      (y_solve nz2 ny2 nx2 vs rhoq
+        dy3 dy5 dy1 dtty1 dtty2 c2dtty1
+        isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+        rho_i cv con43 c1c5 dymax rhs lhs speed lhsp lhsm
+        comz1 comz4 comz5 comz6)
+      (z_solve nz2 ny2 nx2 ws rhos
+        dz4 dz5 dz1 dttz1 dttz2 c2dttz1
+        isize1 jsize1 ksize1 jsize2 ksize2 jsize4 
+        rho_i cv con43 c1c5 dzmax rhs lhs speed lhsp lhsm
+        comz1 comz4 comz5 comz6
+        u us vs qs)
+      (add nz2 ny2 nx2 isize1 jsize1 ksize1 u rhs))
+
+;;;//---------------------------------------------------------------------
+;;;//      do one time step to touch all code, and reinitialize
+;;;//---------------------------------------------------------------------
+  (adi)
+
+  (CG-n0-only cg
+    (initialize u nx ny nz isize1 jsize1 ksize1 dnxm1 dnym1 dnzm1))
+
+  (CG-n0-only cg
+    (timer-start 1))
+
+  (for ([step (in-range 1 (add1 niter))])
+    (CG-n0-only cg
+      (when (or (zero? (modulo step 20)) (= step 1) (= step niter))
+        (printf "Time step ~a\n" step)))
+
+    (adi))
+
+  (CG-n0-only cg
+    (timer-stop 1)))
+
+
 
 (define (get-mflops total-time niter nx ny nz)
   (if (not (= total-time 0.0))
@@ -1454,7 +1489,7 @@ u us vs qs
       (+ csum (/ (sqr arro) (* (+ 2 nz2) (+ 2 ny2) (+ 2 nx2) 5))))))
 
 (define (get-input-pars maxlevel)
-  (define fn "mg.input")
+  (define fn "sp.input")
   (if (file-exists? fn)
     (match (call-with-input-file fn read)
       [(list lt lnx lny lnz nit)
