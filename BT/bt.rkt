@@ -7,22 +7,10 @@
 (require "../rand-generator.rkt")
 (require "../timer.rkt")
 (require "../parallel-utils.rkt")
+(require "../debug.rkt")
 (require racket/match)
 (require racket/math)
-;(require racket/place)
-;(require racket/place-utils)
 (require (for-syntax scheme/base))
-
-(define (pflve v d)
-  (for ([i (in-range (flvector-length v))])
-    (printf "~a ~a ~a\n" d i (fr v i)))
-  (flush-output)
-  (exit 0))
-
-(define (pflv v d)
-  (for ([i (in-range (flvector-length v))])
-    (printf "~a ~a ~a\n" d i (fr v i)))
-  (flush-output))
 
 (require (only-in scheme/flonum make-flvector 
                                 make-shared-flvector 
@@ -36,6 +24,7 @@
 ;(define vs! vector-set!)
 (define f! flvector-set!)
 (define fr flvector-ref)
+
 #|
 (require (only-in scheme/flonum make-flvector 
                                 make-shared-flvector 
@@ -47,17 +36,7 @@
    (filtered-in
     (lambda (name) (regexp-replace #rx"unsafe-" name ""))
     scheme/unsafe/ops))
-|#
 
-#|
-(require (rename-in scheme/unsafe/ops
-                    [unsafe-vector-ref vr] 
-                    [unsafe-vector-set! vs!]
-                    [unsafe-flvector-ref fr] 
-                    [unsafe-flvector-set! f!]))
-|#
-
-#|
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
@@ -69,26 +48,6 @@
                     [unsafe-fl/ fl/]
 ))
 |#
-(define-syntax (defconst stx)
-  (syntax-case stx ()
-    [(_ x v)
-      #'(define-syntax x 
-        (make-set!-transformer
-          (lambda (stx)
-            (syntax-case stx (set!)
-              ; Redirect mutation of x to y
-              [(set! id v) #'(error "format ~a is constant" (syntax-datum id))]
-              ; Normal use of x really gets x
-              [id (datum->syntax #'x (eval v))]))))]))
-
-;(defconst bt (sqrt 0.5))
-;(defconst c1 1.4)
-;(defconst c2 0.4)
-
-;(defconst c1c2 (* 1.4 0.4))
-;(defconst c1c5 (* 1.4 1.4))
-;(defconst c3c4 (* 0.1 1.0))
-;(defconst c1345 (* 1.4 1.4 0.1 1.0))
  
 (define-syntax-rule (vidx3 i1 i2 i3 n1 n2) (+ i1 (* n1 (+ i2 (* n2 i3)))))
 (define-syntax-rule (vr3 v i1 i2 i3 n1 n2) (vr v (vidx3 i1 i2 i3 n1 n2)))
@@ -392,7 +351,7 @@
           [civ 2.5]
 )
 (define (compute_rhs_thunk)
-(compute_rhs isize2 jsize2 ksize2 jsize1 ksize1 u us vs ws rho_i square qs 
+(compute_rhs (CGSingle) isize2 jsize2 ksize2 jsize1 ksize1 u us vs ws rho_i square qs 
 c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     tx2 ty2 tz2 con43 dt
     dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
@@ -401,45 +360,6 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     yycon2 yycon3 yycon4 yycon5
     dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
     zzcon2 zzcon3 zzcon4 zzcon5))
-
-(define (adi_serial)
-(compute_rhs isize2 jsize2 ksize2 jsize1 ksize1 u us vs ws rho_i square qs 
-c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
-    tx2 ty2 tz2 con43 dt
-    dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
-    xxcon2 xxcon3 xxcon4 xxcon5
-    dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
-    yycon2 yycon3 yycon4 yycon5
-    dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
-    zzcon2 zzcon3 zzcon4 zzcon5
-)
-  (x_solve nz2 ny2 nx2
-    jsize1 ksize1 
-    isize2 jsize2 ksize2 
-    isize4 jsize4 ksize4 
-    isize jsize ksize isize
-    u square rhs lhs fjac njac rho_i qs 
-    c1 c2 c3c4 c1345 con43 dt 
-    tx1 tx2 dtdx1tx1 dtdx2tx1 dtdx3tx1 dtdx4tx1 dtdx5tx1)
-  (y_solve nz2 nx2 ny2
-    jsize1 ksize1 
-    isize2 jsize2 ksize2 
-    isize4 jsize4 ksize4 
-    isize jsize ksize jsize
-    u square rhs lhs fjac njac rho_i qs 
-    c1 c2 c3c4 c1345 con43 dt 
-    ty1 ty2 dtdy1ty1 dtdy2ty1 dtdy3ty1 dtdy4ty1 dtdy5ty1)
-  (z_solve ny2 nx2 nz2
-    jsize1 ksize1 
-    isize2 jsize2 ksize2 
-    isize4 jsize4 ksize4 
-    isize jsize ksize ksize
-    u square rhs lhs fjac njac rho_i qs 
-    c1 c2 c3c4 c1345 con43 dt 
-    tz1 tz2 dtdz1tz1 dtdz2tz1 dtdz3tz1 dtdz4tz1 dtdz5tz1)
-  (add nz2 ny2 nx2 jsize1 ksize1 isize2 jsize2 ksize2 u rhs)
-  ;(pflve rhs "Z")
-  )
 
       (print-banner bmname args) 
 
@@ -453,28 +373,34 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       (printf "Iterations: ~a dt: ~a\n" niter dt)
       (initialize u nx ny nz isize2 jsize2 ksize2 dnxm1 dnym1 dnzm1)
       (exact_rhs nx2 ny2 nz2 isize2 jsize2 ksize2 jsize3 forcing dnxm1 dnym1 dnzm1 ue buf cuf q
-  rhs u c1 c2 0.25
-  tx2 ty2 tz2
-  xxcon1 xxcon2 xxcon3 xxcon4 xxcon5
-  dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
-  yycon1 yycon2 yycon3 yycon4 yycon5
-  dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
-  zzcon1 zzcon2 zzcon3 zzcon4 zzcon5
-  dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
-;;;//---------------------------------------------------------------------
-;;;//      do one time step to touch all code, and reinitialize
-;;;//---------------------------------------------------------------------
-      (adi_serial)
+        rhs u c1 c2 0.25
+        tx2 ty2 tz2
+        xxcon1 xxcon2 xxcon3 xxcon4 xxcon5
+        dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+        yycon1 yycon2 yycon3 yycon4 yycon5
+        dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+        zzcon1 zzcon2 zzcon3 zzcon4 zzcon5
+        dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
 
-      (initialize u nx ny nz isize2 jsize2 ksize2 dnxm1 dnym1 dnzm1)
-
-      (timer-start 1)
-      (for ([step (in-range 1 (add1 niter))])
-        (when (or (zero? (modulo step 20)) (= step 1) (= step niter))
-          (printf "Time step ~a\n" step))
-        (adi_serial))
-      (timer-stop 1)
-
+      (CGspawn (if serial 0 num-threads) bt-body
+        u us vs ws rho_i square qs rhs forcing lhs fjac njac
+        nx ny nz 
+        nx2 ny2 nz2 
+        jsize1 ksize1 
+        isize2 jsize2 ksize2 
+        isize4 jsize4 ksize4 
+        isize jsize ksize
+        dnxm1 dnym1 dnzm1
+        c1 c2 c1c2 c3c4 c1345 con43 dt dssp niter
+        dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+        xxcon2 xxcon3 xxcon4 xxcon5
+        dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+        yycon2 yycon3 yycon4 yycon5
+        dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
+        zzcon2 zzcon3 zzcon4 zzcon5
+        tx1 tx2 dtdx1tx1 dtdx2tx1 dtdx3tx1 dtdx4tx1 dtdx5tx1
+        ty1 ty2 dtdy1ty1 dtdy2ty1 dtdy3ty1 dtdy4ty1 dtdy5ty1
+        tz1 tz2 dtdz1tz1 dtdz2tz1 dtdz3tz1 dtdz4tz1 dtdz5tz1)
 
       (let* ([verified (verify CLASS niter dt compute_rhs_thunk
         nx2 ny2 nz2 isize2 jsize2 ksize2 u rhs dnzm1 dnym1 dnxm1)])
@@ -491,6 +417,101 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                                        -1)]) 
             (print-results results) 
             (when #f (print-timers))))))))
+
+(define (bt-body cg  u us vs ws rho_i square qs rhs forcing lhs_ fjac_ njac_
+      nx ny nz 
+      nx2 ny2 nz2 
+      jsize1 ksize1 
+      isize2 jsize2 ksize2 
+      isize4 jsize4 ksize4 
+      isize jsize ksize
+      dnxm1 dnym1 dnzm1
+      c1 c2 c1c2 c3c4 c1345 con43 dt dssp niter
+      dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+      xxcon2 xxcon3 xxcon4 xxcon5
+      dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+      yycon2 yycon3 yycon4 yycon5
+      dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
+      zzcon2 zzcon3 zzcon4 zzcon5
+      tx1 tx2 dtdx1tx1 dtdx2tx1 dtdx3tx1 dtdx4tx1 dtdx5tx1
+      ty1 ty2 dtdy1ty1 dtdy2ty1 dtdy3ty1 dtdy4ty1 dtdy5ty1
+      tz1 tz2 dtdz1tz1 dtdz2tz1 dtdz3tz1 dtdz4tz1 dtdz5tz1
+)
+   (define s3 (* ksize4 (add1 nx)))
+   (define s4 (* jsize4 (add1 nx)))
+   (define lhs     (make-flvector s3 0.0))
+   (define fjac    (make-flvector s4 0.0))
+   (define njac    (make-flvector s4 0.0))
+   (define (adi)
+    (compute_rhs cg isize2 jsize2 ksize2 jsize1 ksize1 u us vs ws rho_i square qs 
+      c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
+      tx2 ty2 tz2 con43 dt
+      dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+      xxcon2 xxcon3 xxcon4 xxcon5
+      dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+      yycon2 yycon3 yycon4 yycon5
+      dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
+      zzcon2 zzcon3 zzcon4 zzcon5
+    )
+    
+    (CG-B cg)
+  
+    (x_solve cg nz2 ny2 nx2
+      jsize1 ksize1 
+      isize2 jsize2 ksize2 
+      isize4 jsize4 ksize4 
+      isize jsize ksize isize
+      u square rhs lhs fjac njac rho_i qs 
+      c1 c2 c3c4 c1345 con43 dt 
+      tx1 tx2 dtdx1tx1 dtdx2tx1 dtdx3tx1 dtdx4tx1 dtdx5tx1)
+
+    (CG-B cg)
+
+    (y_solve cg nz2 nx2 ny2
+      jsize1 ksize1 
+      isize2 jsize2 ksize2 
+      isize4 jsize4 ksize4 
+      isize jsize ksize jsize
+      u square rhs lhs fjac njac rho_i qs 
+      c1 c2 c3c4 c1345 con43 dt 
+      ty1 ty2 dtdy1ty1 dtdy2ty1 dtdy3ty1 dtdy4ty1 dtdy5ty1)
+
+    (CG-B cg)
+
+    (z_solve cg ny2 nx2 nz2
+      jsize1 ksize1 
+      isize2 jsize2 ksize2 
+      isize4 jsize4 ksize4 
+      isize jsize ksize ksize
+      u square rhs lhs fjac njac rho_i qs 
+      c1 c2 c3c4 c1345 con43 dt 
+      tz1 tz2 dtdz1tz1 dtdz2tz1 dtdz3tz1 dtdz4tz1 dtdz5tz1)
+
+    (CG-B cg)
+
+    (add cg nz2 ny2 nx2 jsize1 ksize1 isize2 jsize2 ksize2 u rhs)
+    )
+
+;;;//---------------------------------------------------------------------
+;;;//      do one time step to touch all code, and reinitialize
+;;;//---------------------------------------------------------------------
+      (adi)
+
+      (CG-n0-only cg
+        (initialize u nx ny nz isize2 jsize2 ksize2 dnxm1 dnym1 dnzm1)
+
+        (timer-start 1))
+
+      (for ([step (in-range 1 (add1 niter))])
+        (CG-n0-only cg
+          (when (or (zero? (modulo step 20)) (= step 1) (= step niter))
+            (printf "Time step ~a\n" step)))
+        (adi))
+
+      (CG-n0-only cg
+        (timer-stop 1))
+
+)
 
 (define (get-mflops total-time niter nx ny nz)
   (if (not (= total-time 0.0))
@@ -607,13 +628,13 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
             (f! lhs (+ (* 2 jsize4) idx) 0.0)))
         (f! lhs (+ m (* m isize4) (* 1 jsize4) ik) 1.0)))))
 
-(define (add nz2 ny2 nx2 jsize1 ksize1 isize2 jsize2 ksize2 u rhs)
-  (for* ([k (in-range 1 (add1 nz2))]
-         [j (in-range 1 (add1 ny2))]
-         [i (in-range 1 (add1 nx2))]
-         [m (in-range 5)])
+(define (add cg nz2 ny2 nx2 jsize1 ksize1 isize2 jsize2 ksize2 u rhs)
+  (CGfor cg ([k (in-range 1 (add1 nz2))])
+    (for* ([j (in-range 1 (add1 ny2))]
+           [i (in-range 1 (add1 nx2))]
+           [m (in-range 5)])
     (let ([idx (+ m (* i isize2) (* j jsize2) (* k ksize2))])
-      (f!+ u idx (fr rhs idx)))))
+      (f!+ u idx (fr rhs idx))))))
 
 (define-syntax-rule (matvec_sub ablock blkoffst avect avcoffst bvect bvcoffst)
   (for ([i (in-range 5)])
@@ -948,7 +969,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       (f! rhs (+ 3 idx) (- t2 t1))
       (f! rhs (+ 4 idx) (+ t1 t2)))))
 
-(define (compute_rhs isize2 jsize2 ksize2 jsize1 ksize1 u us vs ws rho_i square qs 
+(define (compute_rhs cg isize2 jsize2 ksize2 jsize1 ksize1 u us vs ws rho_i square qs 
 c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     tx2 ty2 tz2 con43 dt
     dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
@@ -958,9 +979,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
     zzcon2 zzcon3 zzcon4 zzcon5
 )
-  (for* ([k (in-range (+ nz2 2))]
-         [j (in-range (+ ny2 2))]
-         [i (in-range (+ nx2 2))])
+  (CGfor cg ([k (in-range 0 (+ nz2 2))])
+    (for* ([j (in-range (+ ny2 2))]
+           [i (in-range (+ nx2 2))])
     (let* ([idx (+ (* i isize2) (* j jsize2) (* k ksize2))]
            [idx2 (+ i (* j jsize1) (* k ksize1))]
            [rho_inv (/ 1.0 (fr u idx))]
@@ -977,8 +998,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       (f! qs idx2 (* rho_inv sq))
 
       (for* ([m (in-range 5)])
-        (f! rhs (+ m idx) (fr forcing (+ m idx))))))
+        (f! rhs (+ m idx) (fr forcing (+ m idx)))))))
 
+  (CG-B cg)
 
   (define-syntax-rule (KZERO a ...) 0)
   (define-syntax-rule (KIDENT a ...) (begin a ...))
@@ -990,7 +1012,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     _con_0 _con_1 _con_2 __con3 __con4 __con5
     t_2 t_2m1 t_2m2 t_2m3)
 
-    (for ([kk (in-range 1 (add1 nkk2))])
+    (CGfor cg ([kk (in-range 1 (add1 nkk2))])
       (for ([jj (in-range 1 (add1 njj2))])
         (for ([ii (in-range 1 (add1 nii2))])
           (let* ([idx (+ (* i isize2) (* j jsize2) (* k ksize2))]
@@ -1059,6 +1081,8 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     (* xxcon2 con43) xxcon2 xxcon2 xxcon3 xxcon4 xxcon5
     tx2 KIDENT KZERO KZERO)
 
+  (CG-B cg)
+
   (DISSIP k i j nz2 nx2 ny2 u rhs
     i j k 2 vs 
     (+ (* i isize2) (* (+ j 1) jsize2) (* k ksize2)) 
@@ -1070,6 +1094,8 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
     yycon2 (* yycon2 con43) yycon2 yycon3 yycon4 yycon5
     ty2 KZERO KIDENT KZERO)
+
+  (CG-B cg)
 
   (DISSIP i j k nx2 ny2 nz2 u rhs
     i j k 3 ws 
@@ -1083,13 +1109,13 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     zzcon2 zzcon2 (* zzcon2 con43) zzcon3 zzcon4 zzcon5
     tz2 KZERO KZERO KIDENT)
 
-  (for* ([k (in-range 1 (add1 nz2))]
-         [j (in-range 1 (add1 ny2))]
-         [i (in-range 1 (add1 nx2))]
-         [m (in-range 5)])
+  (CG-B cg)
+  (CGfor cg ([k (in-range 1 (add1 nz2))])
+    (for* ([j (in-range 1 (add1 ny2))]
+           [i (in-range 1 (add1 nx2))]
+           [m (in-range 5)])
     (let* ([idx (+ m (* i isize2) (* j jsize2) (* k ksize2))])
-      (f!* rhs idx dt))))
-  
+      (f!* rhs idx dt)))))
 
 (define (verify class no_time_steps dt compute_rhs_thunk
   nx2 ny2 nz2 isize1 jsize1 ksize1 u rhs dnzm1 dnym1 dnxm1)
@@ -1156,17 +1182,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
 
 (define-syntax-case (__solve NAME R i j k kk jj ii nkk2 njj2 nii2)
 
-#'(define (NAME nkk2 njj2 nii2 jsize1 ksize1 isize2 jsize2 ksize2 isize4 jsize4 ksize4 isize jsize ksize IISIZE u square rhs lhs fjac njac rho_i qs c1 c2 c3c4 c1345 con43 dt t_1 t_2 dtd_1t_1 dtd_2t_1 dtd_3t_1 dtd_4t_1 dtd_5t_1)
-  (define-syntax-case (PFLV R V D)
-    (if (= (syntax->datum #'R) 2)
-      #'(pflv V D)
-      #'(void)))
-  (define-syntax-case (PFLVE R V D)
-    (if (= (syntax->datum #'R) 2)
-      #'(pflve V D)
-      #'(void)))
+#'(define (NAME cg nkk2 njj2 nii2 jsize1 ksize1 isize2 jsize2 ksize2 isize4 jsize4 ksize4 isize jsize ksize IISIZE u square rhs lhs fjac njac rho_i qs c1 c2 c3c4 c1345 con43 dt t_1 t_2 dtd_1t_1 dtd_2t_1 dtd_3t_1 dtd_4t_1 dtd_5t_1)
   
-  (for ([kk (in-range 1 (add1 nkk2))])
+  (CGfor cg ([kk (in-range 1 (add1 nkk2))])
     (for ([jj (in-range 1 (add1 njj2))])
       (define-syntax-case (MODDET R MACRO N1 N2 N3 V1 V2 V3 BODY (... ...))
         (with-syntax ([LETBINDINGS (case R
