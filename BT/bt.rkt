@@ -19,11 +19,16 @@
                                 flvector
                                 flmax
                                 flvector-set!
-                                flvector-ref))
-;(define vr vector-ref)
-;(define vs! vector-set!)
-(define f! flvector-set!)
-(define fr flvector-ref)
+                                flvector-ref
+                                fl+
+                                fl-
+                                fl*
+                                fl/)
+          (rename-in scheme/flonum [flvector-ref fr] 
+                                   [flvector-set! f!]))
+(require (only-in scheme/fixnum fx+ 
+                                fx-
+                                fx*))
 
 #|
 (require (only-in scheme/flonum make-flvector 
@@ -31,12 +36,7 @@
                                 shared-flvector
                                 flvector-length
                                 flvector
-                                flmax)
-#;
-   (filtered-in
-    (lambda (name) (regexp-replace #rx"unsafe-" name ""))
-    scheme/unsafe/ops))
-
+                                flmax))
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
@@ -46,13 +46,16 @@
                     [unsafe-fl- fl-]
                     [unsafe-fl* fl*]
                     [unsafe-fl/ fl/]
+                    [unsafe-fx+ fx+]
+                    [unsafe-fx- fx-]
+                    [unsafe-fx* fx*]
 ))
 |#
  
-(define-syntax-rule (vidx3 i1 i2 i3 n1 n2) (+ i1 (* n1 (+ i2 (* n2 i3)))))
+(define-syntax-rule (vidx3 i1 i2 i3 n1 n2) (fx+ i1 (fx* n1 (fx+ i2 (fx* n2 i3)))))
 (define-syntax-rule (vr3 v i1 i2 i3 n1 n2) (vr v (vidx3 i1 i2 i3 n1 n2)))
-(define-syntax-rule (vidx off i1 i2 i3 n1 n2) (+ off (vidx3 i1 i2 i3 n1 n2)))
-(define-syntax-rule (vro3 v off i1 i2 i3 n1 n2) (vr v (+ off (vidx3 i1 i2 i3 n1 n2))))
+(define-syntax-rule (vidx off i1 i2 i3 n1 n2) (fx+ off (vidx3 i1 i2 i3 n1 n2)))
+(define-syntax-rule (vro3 v off i1 i2 i3 n1 n2) (vr v (fx+ off (vidx3 i1 i2 i3 n1 n2))))
 
 (define-syntax-rule (f!+ v idx_ val ...)
   (let ([idx idx_])
@@ -62,10 +65,10 @@
     (f! v idx (- (fr v idx) val ...))))
 (define-syntax-rule (f!* v idx_ val ...)
   (let ([idx idx_])
-    (f! v idx (* (fr v idx) val ...))))
+    (f! v idx (fl* (fr v idx) val ...))))
 (define-syntax-rule (f!/ v idx_ val ...)
   (let ([idx idx_])
-    (f! v idx (/ (fr v idx) val ...))))
+    (f! v idx (fl/ (fr v idx) val ...))))
 (define-syntax (flmax* stx)
   (syntax-case stx ()
     [(_ a b) #'(flmax a b)]
@@ -633,15 +636,15 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     (for* ([j (in-range 1 (add1 ny2))]
            [i (in-range 1 (add1 nx2))]
            [m (in-range 5)])
-    (let ([idx (+ m (* i isize2) (* j jsize2) (* k ksize2))])
+    (let ([idx (+ m (fx* i isize2) (fx* j jsize2) (fx* k ksize2))])
       (f!+ u idx (fr rhs idx))))))
 
 (define-syntax-rule (matvec_sub ablock blkoffst avect avcoffst bvect bvcoffst)
   (for ([i (in-range 5)])
-    (f!+ bvect (+ i bvcoffst)
+    (f!+ bvect (fx+ i bvcoffst)
       (for/fold ([S 0.0]) ([n (in-range 0 21 5)]
                            [j (in-range 5)])
-        (- S (* (fr ablock (+ i n blkoffst)) (fr avect (+ j avcoffst))))))))
+        (fl- S (fl* (fr ablock (+ i n blkoffst)) (fr avect (+ j avcoffst))))))))
 
 (define-syntax-rule (matmul_sub ablock ablkoffst bblock bblkoffst cblock cblkoffst)
   (for ([nj (in-range 0 21 5)])
@@ -649,13 +652,13 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       (f! cblock (+ i nj cblkoffst)
         (for/fold ([S (fr cblock (+ i nj cblkoffst))]) ([m (in-range 0 21 5)]
                              [k (in-range 5)])
-        (- S (* (fr ablock (+ i m ablkoffst)) (fr bblock (+ k nj bblkoffst)))))))))
+        (fl- S (fl* (fr ablock (+ i m ablkoffst)) (fr bblock (+ k nj bblkoffst)))))))))
  
 (define (binvcrhs lhss lhsoffst c coffst r roffst)
-  (define-syntax-rule (V- V I N C J O) (f!- V (+ I N O) (* C (fr V (+ J N O)))))
+  (define-syntax-rule (V- V I N C J O) (f!- V (+ I N O) (fl* C (fr V (+ J N O)))))
   (define-syntax-rule (lhss- I N C J)  (V- lhss I N C J lhsoffst))
   (define-syntax-rule (c-   I N C J)   (V- c I N C J coffst))
-  (define-syntax-rule (r-   I C J)     (f!- r (+ I roffst) (* C (fr r (+ J roffst)))))
+  (define-syntax-rule (r-   I C J)     (f!- r (+ I roffst) (fl* C (fr r (+ J roffst)))))
   (define-syntax-rule (lhss* I N C)    (f!* lhss (+ I N lhsoffst) C))
   (define-syntax-rule (c*   I N C)     (f!* c (+ I N coffst) C))
   (define-syntax-rule (r*   I C)       (f!* r (+ I roffst) C))
@@ -674,9 +677,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
         (r- i coeff P)))))
 
 (define (binvrhs lhss lhsoffst r roffst)
-  (define-syntax-rule (V- V I N C J O) (f!- V (+ I N O) (* C (fr V (+ J N O)))))
+  (define-syntax-rule (V- V I N C J O) (f!- V (+ I N O) (fl* C (fr V (+ J N O)))))
   (define-syntax-rule (lhss- I N C J) (V- lhss I N C J lhsoffst))
-  (define-syntax-rule (r-   I C J) (f!- r (+ I roffst) (* C (fr r (+ J roffst)))))
+  (define-syntax-rule (r-   I C J) (f!- r (+ I roffst) (fl* C (fr r (+ J roffst)))))
   (define-syntax-rule (lhss* I N C) (f!* lhss (+ I N lhsoffst) C))
   (define-syntax-rule (r*   I C)   (f!* r (+ I roffst) C))
 
@@ -706,9 +709,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
               (let ([xi (* i dnxm1)])
                 (exact_solution xi eta zeta u-exact 0)
                 (for ([m (in-range 5)])
-                  (let* ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))]
-                         [add (- (fr u idx) (fr u-exact m))])
-                    (f!+ rms m (* add add)))))))))))
+                  (let* ([idx (+ m (fx* i isize1) (fx* j jsize1) (fx* k ksize1))]
+                         [add (fl- (fr u idx) (fr u-exact m))])
+                    (f!+ rms m (sqr add)))))))))))
 
   
   (for ([m (in-range 5)])
@@ -721,7 +724,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
          [j (in-range 1 (add1 ny2))]
          [i (in-range 1 (add1 nx2))]
          [m (in-range 5)])
-    (let* ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))]
+    (let* ([idx (+ m (fx* i isize1) (fx* j jsize1) (fx* k ksize1))]
            [add (fr rhs idx)])
       (f!+ rms m (sqr add))))
   
@@ -732,12 +735,6 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
   MIDX MIDX+ MIDX+2 MIDX- MIDX-2 
   DIDX IDX dssp)
 
-;    (fourth-order-dissipation ii NII2 forcing ue i j k m midx idx
-;              (+ ii (* m jsize3)) (+ 1 midx) (+ 2 midx) (- midx 1) (- midx 2) 
-;              midx (+ (* i isize1) (* j jsize1) (* k ksize1)) dssp)
-;    (fourth-order-dissipation ii nii2 rhs u i j k m midx idx 
-;              (+ m idx) (+ m idxz+) (+ m idxz+2) (+ m idxz-) (+ m idxz-2)
-;               midx (+ (* i isize1) (* j jsize1) (* k ksize1)) dssp))))
   (begin
   (let* ([ii 1]
          [idx IDX])
@@ -746,8 +743,8 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
              [midx+  MIDX+]
              [midx+2 MIDX+2]
              [didx   DIDX])
-        (f!+ V didx (- (* dssp (+ (*  5.0 (fr V2 midx))
-                                     (* -4.0 (fr V2 midx+))
+        (f!+ V didx (- (fl* dssp (+ (fl*  5.0 (fr V2 midx))
+                                     (fl* -4.0 (fr V2 midx+))
                                              (fr V2 midx+2))))))))
   (let* ([ii 2]
          [idx IDX])
@@ -757,9 +754,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
              [midx+2 MIDX+2]
              [midx-  MIDX-]
              [didx   DIDX])
-        (f!+ V didx (- (* dssp (+ (* -4.0 (fr V2 midx-)) 
-                                     (*  6.0 (fr V2 midx))
-                                     (* -4.0 (fr V2 midx+))
+        (f!+ V didx (- (fl* dssp (+ (fl* -4.0 (fr V2 midx-)) 
+                                     (fl*  6.0 (fr V2 midx))
+                                     (fl* -4.0 (fr V2 midx+))
                                              (fr V2 midx+2))))))))
   (for ([ii (in-range 3 (sub1 nII2))])
     (let ([idx IDX])
@@ -770,10 +767,10 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                [midx-  MIDX-]
                [midx-2 MIDX-2]
                [didx   DIDX])
-          (f!+ V didx (- (* dssp (+         (fr V2 midx-2)
-                                       (* -4.0 (fr V2 midx-))
-                                       (*  6.0 (fr V2 midx))
-                                       (* -4.0 (fr V2 midx+))
+          (f!+ V didx (- (fl* dssp (+         (fr V2 midx-2)
+                                       (fl* -4.0 (fr V2 midx-))
+                                       (fl*  6.0 (fr V2 midx))
+                                       (fl* -4.0 (fr V2 midx+))
                                                (fr V2 midx+2)))))))))
   (let* ([ii (sub1 nII2)]
          [idx IDX])
@@ -784,9 +781,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
              [midx-2 MIDX-2]
              [didx   DIDX])
         (f!+ V didx (- (* dssp (+         (fr V2 midx-2)
-                                     (* -4.0 (fr V2 midx-))
-                                     (*  6.0 (fr V2 midx))
-                                     (* -4.0 (fr V2 midx+)))))))))
+                                     (fl* -4.0 (fr V2 midx-))
+                                     (fl*  6.0 (fr V2 midx))
+                                     (fl* -4.0 (fr V2 midx+)))))))))
   (let* ([ii nII2]
          [idx IDX])
     (for ([m (in-range 5)])
@@ -795,8 +792,8 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
              [midx-2 MIDX-2]
              [didx   DIDX])
         (f!+ V didx (- (* dssp (+         (fr V2 midx-2)
-                                     (* -4.0 (fr V2 midx-))
-                                     (*  5.0 (fr V2 midx)))))))))))
+                                     (fl* -4.0 (fr V2 midx-))
+                                     (fl*  5.0 (fr V2 midx)))))))))))
 
 (define (exact_rhs nx2 ny2 nz2 isize1 jsize1 ksize1 jsize3 forcing dnxm1 dnym1 dnzm1 ue buf cuf q
   rhs u c1 c2 dssp
@@ -860,15 +857,15 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                    [A4J+ (+ A4J 1)]
                    [A4J- (- A4J 1)])
 
-              (define-syntax-rule (citA C C1 C2 C3) (* C (+ (- C1 (* 2.0 C2)) C3)))
+              (define-syntax-rule (citA C C1 C2 C3) (fl* C (+ (- C1 (* 2.0 C2)) C3)))
               (define-syntax-rule (citS3 C V I1 I2 I3) (citA C (fr V I1) (fr V I2) (fr V I3)))
               (define-syntax-rule (citS C V) (citA C (fr V ip1) (fr V ii) (fr V im1)))
 
-              (define-syntax-rule (t_2it l r) (- (* t_2 (-  l r))))
-              (define-syntax-rule (t_2it3 l r o) (- (* t_2 (+ (-  l r) o))))
+              (define-syntax-rule (t_2it l r) (- (fl* t_2 (-  l r))))
+              (define-syntax-rule (t_2it3 l r o) (- (fl* t_2 (+ (fl- l r) o))))
               (define-syntax-rule (t_2itlr UI ZSI) (* (fr ue UI) (fr buf ZSI)))
-              (define-syntax-rule (t_2ito) (- (* c2 (- (fr ue A4J+) (fr q ip1)))
-                                              (* c2 (- (fr ue A4J-) (fr q im1)))))
+              (define-syntax-rule (t_2ito) (- (fl* c2 (fl- (fr ue A4J+) (fr q ip1)))
+                                              (fl* c2 (fl- (fr ue A4J-) (fr q im1)))))
 
               (define-syntax-rule (mid d__t_1 __con2X A t_2itother)
                    (let* ([AJ (+ ii (* A jsize3))]
@@ -933,42 +930,6 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       (f!* forcing (+ m (* i isize1) (* j jsize1) (* k ksize1)) -1.0))
 )
 
-(define (ninvr nz2 ny2 nx2 isize1 jsize1 ksize1 rhs bt)
-  (for* ([k (in-range 1 (add1 nz2))]
-         [j (in-range 1 (add1 ny2))]
-         [i (in-range 1 (add1 nx2))])
-    (let* ([idx (+ (* i isize1) (* j jsize1) (* k ksize1))]
-           [r1 (fr rhs (+ 0 idx))]
-           [r2 (fr rhs (+ 1 idx))]
-           [r3 (fr rhs (+ 2 idx))]
-           [r4 (fr rhs (+ 3 idx))]
-           [r5 (fr rhs (+ 4 idx))]
-           [t1 (* bt r3)]
-           [t2 (* 0.5 (+ r4 r5))])
-      (f! rhs (+ 0 idx) (- r2))
-      (f! rhs (+ 1 idx) r1)
-      (f! rhs (+ 2 idx) (* bt (- r4 r5)))
-      (f! rhs (+ 3 idx) (- t2 t1))
-      (f! rhs (+ 4 idx) (+ t1 t2)))))
-
-(define (pinvr nz2 ny2 nx2 isize1 jsize1 ksize1 rhs bt)
-  (for* ([k (in-range 1 (add1 nz2))]
-         [j (in-range 1 (add1 ny2))]
-         [i (in-range 1 (add1 nx2))])
-    (let* ([idx (+ (* i isize1) (* j jsize1) (* k ksize1))]
-           [r1 (fr rhs (+ 0 idx))]
-           [r2 (fr rhs (+ 1 idx))]
-           [r3 (fr rhs (+ 2 idx))]
-           [r4 (fr rhs (+ 3 idx))]
-           [r5 (fr rhs (+ 4 idx))]
-           [t1 (* bt r1)]
-           [t2 (* 0.5 (+ r4 r5))])
-      (f! rhs (+ 0 idx) (* bt (- r4 r5)))
-      (f! rhs (+ 1 idx) (- r3))
-      (f! rhs (+ 2 idx) r2)
-      (f! rhs (+ 3 idx) (- t2 t1))
-      (f! rhs (+ 4 idx) (+ t1 t2)))))
-
 (define (compute_rhs cg isize2 jsize2 ksize2 jsize1 ksize1 u us vs ws rho_i square qs 
 c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     tx2 ty2 tz2 con43 dt
@@ -991,11 +952,11 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
            [u4 (fr u (+ idx 4))]
            [sq (* 0.5 (+ (sqr u1) (sqr u2) (sqr u3)) rho_inv)])
       (f! rho_i idx2 rho_inv)
-      (f! us idx2 (* rho_inv u1))
-      (f! vs idx2 (* rho_inv u2))
-      (f! ws idx2 (* rho_inv u3))
+      (f! us idx2 (fl* rho_inv u1))
+      (f! vs idx2 (fl* rho_inv u2))
+      (f! ws idx2 (fl* rho_inv u3))
       (f! square idx2 sq)
-      (f! qs idx2 (* rho_inv sq))
+      (f! qs idx2 (fl* rho_inv sq))
 
       (for* ([m (in-range 5)])
         (f! rhs (+ m idx) (fr forcing (+ m idx)))))))
@@ -1020,7 +981,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                  [idx4 (+ idx 4)]
                  [idxz+4 (+ idxz+ 4)]
                  [idxz-4 (+ idxz- 4)])
-            (define-syntax-rule (citA C C1 C2 C3) (* C (+ (- C1 (* 2.0 C2)) C3)))
+            (define-syntax-rule (citA C C1 C2 C3) (fl* C (+ (- C1 (fl* 2.0 C2)) C3)))
             (define-syntax-rule (cit3S C V I1 I2 I3) (citA C (fr V I1) (fr V I2) (fr V I3)))
             (define-syntax-rule (cit2 C V)  (citA C (fr V idx2z+) (fr V idx2) (fr V idx2z-)))
             (define-syntax-rule (cit3 C F V)(citA C (F (fr V idx2z+)) (F (fr V idx2)) (F (fr V idx2z-))))
@@ -1029,7 +990,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                     (- (fr u idxz-4))    (fr square idx2z-)) c2))
             (define-syntax-rule (t_2it l r) (- (* t_2 (-  l r))))
             (define-syntax-rule (t_2it3 l r o) (- (* t_2 (+ (-  l r) o))))
-            (define-syntax-rule (t_2itlr UI ZSI) (* (fr u UI) (fr zs ZSI)))
+            (define-syntax-rule (t_2itlr UI ZSI) (fl* (fr u UI) (fr zs ZSI)))
 
             (define-syntax-rule (mid d__t_1 __con2X ZS AA t_2m_)
               (let ([idxA (+ idx AA)]
@@ -1051,9 +1012,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
             (mid d_3t_1 _con_1 vs 2 t_2m2)
             (mid d_4t_1 _con_2 ws 3 t_2m3)
 
-            (define-syntax-rule (CONS5W UI RI) (* (fr u UI) (fr rho_i RI)))
-            (define-syntax-rule (T_25W UI RI) (* (- (* c1 (fr u UI))
-                                                    (* c2 (fr square RI)))
+            (define-syntax-rule (CONS5W UI RI) (fl* (fr u UI) (fr rho_i RI)))
+            (define-syntax-rule (T_25W UI RI) (fl* (- (fl* c1 (fr u UI))
+                                                    (fl* c2 (fr square RI)))
                                                  (fr zs RI)))
             (f!+ rhs (+ idx 4)
               (cit3S d_5t_1 u idxz+4 idx4 idxz-4)
@@ -1258,7 +1219,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
           (ROTASN fjac 0 R 0.0 1.0 0.0 0.0 0.0)
           (RETDET R A1 A2 A3 1 2 3
               (ROTASN fjac A1 R
-              (- (* c2 (fr qs ijk1)) (* tmp2 (sqr (fr u (+ A1 ijk2)))))
+              (- (fl* c2 (fr qs ijk1)) (fl* tmp2 (sqr (fr u (+ A1 ijk2)))))
               (/ (* (- 2.0 c2) (fr u (+ A1 ijk2))) (fr u ijk2))
               (- (* c2 tmp1 (fr u (+ A2 ijk2))))
               (- (* c2 tmp1 (fr u (+ A3 ijk2))))
@@ -1281,7 +1242,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                                            (* c1 (fr u (+ 4 ijk2)))))
               (- (* c1 tmp1 (fr u (+ 4 ijk2)))
                  (* c2 tmp2 (sqr (fr u (+ A1 ijk2))))
-                 (* c2 (fr qs ijk1)))
+                 (fl* c2 (fr qs ijk1)))
               (- (* c2 tmp2 (fr u (+ A2 ijk2)) (fr u (+ R ijk2))))
               (- (* c2 tmp2 (fr u (+ A3 ijk2)) (fr u (+ R ijk2))))
               (* c1 tmp1 (fr u (+ R ijk2))))
@@ -1325,13 +1286,13 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       
       (lhsinit lhs IISIZE isize4 jsize4 ksize4)
       
-      (let ([tmp1 (* dt t_1)]
-            [tmp2 (* dt t_2)]
-            [dtd_1t_1*2+1 (+ 1.0 (* dtd_1t_1 2.0))]
-            [dtd_2t_1*2+1 (+ 1.0 (* dtd_2t_1 2.0))]
-            [dtd_3t_1*2+1 (+ 1.0 (* dtd_3t_1 2.0))]
-            [dtd_4t_1*2+1 (+ 1.0 (* dtd_4t_1 2.0))]
-            [dtd_5t_1*2+1 (+ 1.0 (* dtd_5t_1 2.0))])
+      (let ([tmp1 (fl* dt t_1)]
+            [tmp2 (fl* dt t_2)]
+            [dtd_1t_1*2+1 (+ 1.0 (fl* dtd_1t_1 2.0))]
+            [dtd_2t_1*2+1 (+ 1.0 (fl* dtd_2t_1 2.0))]
+            [dtd_3t_1*2+1 (+ 1.0 (fl* dtd_3t_1 2.0))]
+            [dtd_4t_1*2+1 (+ 1.0 (fl* dtd_4t_1 2.0))]
+            [dtd_5t_1*2+1 (+ 1.0 (fl* dtd_5t_1 2.0))])
       (for ([ii (in-range 1 IISIZE)])
         (let ([di (+ (* 0 jsize4) (* ii ksize4))]
               [si- (* (sub1 ii) jsize4)])
@@ -1340,8 +1301,8 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                    [dmi4 (+ di mi4)]
                    [smi4 (+ si- mi4)])
             (for ([n (in-range 5)])
-              (f! lhs (+ n dmi4) (- (+ (* tmp2 (fr fjac (+ n smi4)))
-                                       (* tmp1 (fr njac (+ n smi4))))))
+              (f! lhs (+ n dmi4) (- (+ (fl* tmp2 (fr fjac (+ n smi4)))
+                                       (fl* tmp1 (fr njac (+ n smi4))))))
             )))
           (f!- lhs (+ 0 (* 0 isize4) di) dtd_1t_1)
           (f!- lhs (+ 1 (* 1 isize4) di) dtd_2t_1)
