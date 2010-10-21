@@ -2,27 +2,25 @@
 (require racket/match)
 (require racket/place)
 (require racket/place-utils)
+(require (for-syntax racket/base))
 
-(provide CGspawn CG-n0-only CG-B CGfor CGid CGSingle CGforS CGSerial CGforD)
+(provide CGspawn CG-n0-only CG-B CGfor CGid CGSingle CGforS CGSerial p-range CGforSS)
 
-(define (stripe-range cg i st en pa)
-  (define ec (- en st))
-  (define-values (chunk-size rem) (quotient/remainder ec pa))
+(define-syntax-rule (!or= x b ...)
+  (not (ormap (lambda (y) (= x y)) (list b ...))))
+
+(define (stripe-range cg i st en step np)
+  (when  (!or= step 1 -1)
+    (error "step must be 1 or -1, not ~a" step))
+  (define ec (abs (- en st)))
+  (define step-sign (if (negative? step) - +))
+  (define-values (chunk-size rem) (quotient/remainder ec np))
   (define-values (soff eoff) (if (i . < . rem) (values i (+ i 1)) (values rem rem)))
-  (define start (+ st (* i chunk-size) soff))
-  (define end (+ st (* (+ i 1) chunk-size) eoff))
-;  (printf "STRIPE ~a: ~a ~a ~a ~a ~a\n" (CGid cg) st en ec start end)
-;  (flush-output)
-  (in-range start end))
-
-#|
-(define (print-stripe cg i st_ ec pa)
-  (define-values (st en)
-    (match cg
-      [(CG _ 0 _) (values st_ (+ st_ ec))]
-      [(CG id _ _) (stripe i st_ ec pa)]))
-  (printf "STRIPE ~a: ~a ~a\n" (CGid cg) st en))
-|#
+  (define start (step-sign st (+ (* i chunk-size) soff)))
+  (define end (step-sign st (+ (* (+ i 1) chunk-size) eoff)))
+;;;  (printf "SR ~a ~a ~a ~a ~a ~a ~a\n" st en step i np start end)
+;;;  (flush-output)
+  (in-range start end step))
 
 (define-struct CG (id np ch))
 
@@ -77,17 +75,25 @@
         body ...)
       (CG-0-send cg)]))
 
+(define-syntax (p-range stx)
+  (syntax-case stx (in-range)
+    [(_ cg (in-range st en step)) #'(match cg [(CG _ 0 _) (in-range st en step)]
+                                              [(CG id np _) (stripe-range cg id st en step np)])]
+    [(_ cg (in-range en)) #'(p-range cg (in-range 0 en 1))]
+    [(_ cg (in-range st en)) #'(p-range cg (in-range st en 1))]))
+
 (define-syntax-rule (CGfor cg ([V (in-range ST EN)]) body ...)
   (match cg
     [(CG _ 0 _) (for ([V (in-range ST EN)]) body ...)]
     [(CG id np _) 
-      (for ([V (stripe-range cg id ST EN np)])
+      (for ([V (stripe-range cg id ST EN 1 np)])
         body ...)]))
 
 (define-syntax-rule (CGSerial cg body ...)
   (match cg
     [(CG _ 0 _) body ...]
-    [(CG (and 0 id) np pls) body ... 
+    [(CG (and 0 id) np pls)
+     body ... 
      (for ([ch pls]) (place-channel-send ch 0)
                      (place-channel-recv ch))]
     [(CG id np ch) 
@@ -99,17 +105,22 @@
   (match cg
     [(CG _ 0 _) (for ([V (in-range ST EN)]) body ...)]
     [(CG (and 0 id) np pls) 
-      (for ([V (stripe-range cg id ST EN np)]) body ...)
+      (for ([V (stripe-range cg id ST EN 1 np)]) body ...)
       (for ([ch pls]) (place-channel-send ch 0)
                       (place-channel-recv ch))]
     [(CG id np ch) 
       (place-channel-recv ch)
-      (for ([V (stripe-range cg id ST EN np)]) body ...)
+      (for ([V (stripe-range cg id ST EN 1 np)]) body ...)
       (place-channel-send ch 1)]))
 
-(define-syntax-rule (CGforD cg ([V (in-range ST EN)]) body ...)
+(define-syntax-rule (CGforSS cg ([V R]) body ...)
   (match cg
+    [(CG _ 0 _) (for ([V R]) body ...)]
+    [(CG (and 0 id) np pls) 
+      (for ([V R]) body ...)
+      (for ([ch pls]) (place-channel-send ch 0)
+                      (place-channel-recv ch))]
     [(CG id np ch) 
-;      (print-stripe cg id ST EN np)
-      (CGfor cg ([V (in-range ST EN)])
-        body ...)]))
+      (place-channel-recv ch)
+      (for ([V R]) body ...)
+      (place-channel-send ch 1)]))

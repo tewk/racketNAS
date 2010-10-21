@@ -9,9 +9,8 @@
 (require "../parallel-utils.rkt")
 (require racket/match)
 (require racket/math)
-;(require racket/place)
-;(require racket/place-utils)
 (require "../macros.rkt")
+(require "../debug.rkt")
 (require (for-syntax "../macros.rkt"))
 (require (for-syntax scheme/base))
 (require (for-meta 2 scheme/base))
@@ -21,8 +20,6 @@
                     [flvector-ref fr] 
                     [flvector-set! f!]))
 
-;(define make-shared-flvector make-flvector)
-;(define shared-flvector flvector)
 #|
 (require scheme/fixnum scheme/flonum)
 
@@ -54,16 +51,6 @@
                     [unsafe-fl/ fl/]
 ))
 |#
-(define (pflve v d)
-  (for ([i (in-range (flvector-length v))])
-    (printf "~a ~a ~a\n" d i (fr v i)))
-  (flush-output)
-  (exit 0))
-
-(define (pflv v d)
-  (for ([i (in-range (flvector-length v))])
-    (printf "~a ~a ~a\n" d i (fr v i)))
-  (flush-output))
  
 (define (get-class-size CLASS)
   (case CLASS 
@@ -247,7 +234,8 @@
         dnzm1 dnym1 dnxm1)
   
 
-      (sssor a b c d u rsd rsdnm tv nx ny nz niter niter dt omega isize1 jsize1 ksize1 isize4 jsize4 ksize4
+      (CGspawn (if serial 0 num-threads) 
+        sssor a b c d u rsd rsdnm tv nx ny nz niter niter dt omega isize1 jsize1 ksize1 isize4 jsize4 ksize4
         rho_i flux qs frct
         r43 c1345 c1 c2 c1c5 c3c4 dssp
         isize2 jsize3 ksize3
@@ -314,22 +302,22 @@
   (let ()
   (define-syntax-case (PICK2 R2 V1 V2) 
     #'(begin
-;      (printf "PICK2 ~a ~a ~a\n" (syntax->datum R2) (syntax->datum V1) (syntax->datum V2))
       (case (syntax->datum R2) [(1) V1] [(2) V2] 
       [else (printf "PICK2 error ~a~n" (syntax->datum R2))])))
 
   (with-syntax ([XM (PICK2 #'KS #'- #'+)]
                 [iRR (PICK2 #'KS #'(in-range 1 (sub1 nx)) #'(in-range (- nx 2) 0 -1))]
-                [jRR (PICK2 #'KS #'(in-range 1 (sub1 ny)) #'(in-range (- ny 2) 0 -1))]
+                [jRR (PICK2 #'KS #'(p-range cg (in-range 1 (sub1 ny))) #'(p-range cg (in-range (- ny 2) 0 -1)))]
+                [jRRS (PICK2 #'KS #'(in-range 1 (sub1 ny)) #'(in-range (- ny 2) 0 -1))]
                 [f!-+ (PICK2 #'KS #'f!- #'f!+)]
                 [(MODIFIER ...) (PICK2 #'KS #'(- (fr v mijk)) #'(values) )]
                 [BODY (PICK2 #'KS 
     #'(begin
       (f! v (+ 4 ijk1) (/ (fr tv (+ 4 ij1)) (fr tmat (+ 4 20))))
       
-      (f!- tv (+ 3 ij1) (* (fr tmat (+ 3 20)) (fr v (+ 4 ijk1))))
-
-      (f! v (+ 3 ijk1) (/ (fr tv (+ 3 ij1)) (fr tmat (+ 3 15))))
+      (f! v (+ 3 ijk1) (/ (- (fr tv (+ 3 ij1)) 
+                             (* (fr tmat (+ 3 20)) (fr v (+ 4 ijk1)))) 
+                          (fr tmat (+ 3 15))))
       (f!- tv (+ 2 ij1) (* (fr tmat (+ 2 15)) (fr v (+ 3 ijk1)))
                         (* (fr tmat (+ 2 20)) (fr v (+ 4 ijk1))))
 
@@ -373,78 +361,60 @@
         (f!- v (+ 4 ijk1) tv4)))))))])
 
 
-  #'(define (DNAME tmat v tv ldz ldy ldx d nx ny nz k omega
+  #'(define (DNAME cg tmat v tv ldz ldy ldx d nx ny nz k omega
       isize1 jsize1 ksize1 isize4 jsize4 ksize4)
-  (define-syntax-case (PFLV V D)
-    (if (and (= (syntax->datum #'KS) 2))
-      #'(pflv V D)
-      #'(void)))
-  (define-syntax-case (PFLVE V D)
-    (if (and (= (syntax->datum #'KS) 2))
-      #'(pflve V D)
-      #'(void)))
-  (define-syntax-case (PF a (... ...))
-    (if (and (= (syntax->datum #'KS) 3))
-      #'(begin a (... ...))
-      #'(void)))
     (for* ([j jRR]
            [i iRR])
-    (let ([ij1  (+ (* i isize1) (* j jsize1))]
-          [ijk1  (+ (* i isize1) (* j jsize1) (* k ksize1))])
-    (for ([m (in-range 5)])
-      (let* ([mij1  (+ m ij1)]
-            [mjk4  (+ m (* i jsize4) (* j ksize4))]
-            [mijk  (+ m ijk1)]
-            [i-jk (+ (* (XM i 1) isize1) (* j jsize1) (* k ksize1))]
-            [ij-k (+ (* i isize1) (* (XM j 1) jsize1) (* k ksize1))]
-            [ijk- (+ (* i isize1) (* j jsize1) (* (XM k 1) ksize1))])
-        (f! tv mij1 (MODIFIER ...
-            (* omega
-              (for/fold ([T 0.0]) ([n (in-range 5)])
-                (+ T
-                   (* (fr ldz (+ (* n isize4) mjk4)) (fr v (+ n ijk-))))))))))))
-
-    (for* ([j jRR]
-           [i iRR])
-    (let ([ij1  (+ (* i isize1) (* j jsize1))]
-          [ijk1  (+ (* i isize1) (* j jsize1) (* k ksize1))])
-    (for ([m (in-range 5)])
-      (let* ([mij1  (+ m ij1)]
-            [mjk4  (+ m (* i jsize4) (* j ksize4))]
-            [mijk  (+ m ijk1)]
-            [i-jk (+ (* (XM i 1) isize1) (* j jsize1) (* k ksize1))]
-            [ij-k (+ (* i isize1) (* (XM j 1) jsize1) (* k ksize1))]
-            [ijk- (+ (* i isize1) (* j jsize1) (* (XM k 1) ksize1))])
-        (f!-+ tv mij1
-            (* omega
-              (for/fold ([T 0.0]) ([n (in-range 5)])
-                (+ T
-                   (* (fr ldy (+ (* n isize4) mjk4)) (fr v (+ n ij-k)))
-                   (* (fr ldx (+ (* n isize4) mjk4)) (fr v (+ n i-jk)))))))))
-
-
-    (let ([jk4 (+ (* i jsize4) (* j ksize4))])
+      (let ([ij1  (+ (* i isize1) (* j jsize1))]
+            [ijk1  (+ (* i isize1) (* j jsize1) (* k ksize1))])
       (for ([m (in-range 5)])
-        (for ([n  (in-range 5)]
-              [n5 (in-range 0 21 5)])
-          (PF (printf "~a ~a ~a ~a ~a ~a ~a ~a ~a~n" m n i j jsize4 ksize4 (+ m n5) (+ m (* n isize4) jk4) (fr d (+ m (* n isize4) jk4))))
+        (let* ([mij1  (+ m ij1)]
+              [mjk4  (+ m (* i jsize4) (* j ksize4))]
+              [mijk  (+ m ijk1)]
+              [i-jk (+ (* (XM i 1) isize1) (* j jsize1) (* k ksize1))]
+              [ij-k (+ (* i isize1) (* (XM j 1) jsize1) (* k ksize1))]
+              [ijk- (+ (* i isize1) (* j jsize1) (* (XM k 1) ksize1))])
+          (f! tv mij1 (MODIFIER ...
+              (* omega
+                (for/fold ([T 0.0]) ([n (in-range 5)])
+                  (+ T
+                     (* (fr ldz (+ (* n isize4) mjk4)) (fr v (+ n ijk-))))))))))))
 
-          (f! tmat (+ m n5) (fr d (+ m (* n isize4) jk4))))))
+    (CGforSS cg ([j jRR])
+      (for  ([i iRR])
+      (let ([ij1  (+ (* i isize1) (* j jsize1))]
+            [ijk1  (+ (* i isize1) (* j jsize1) (* k ksize1))])
+      (for ([m (in-range 5)])
+        (let* ([mij1  (+ m ij1)]
+              [mjk4  (+ m (* i jsize4) (* j ksize4))]
+              [mijk  (+ m ijk1)]
+              [i-jk (+ (* (XM i 1) isize1) (* j jsize1) (* k ksize1))]
+              [ij-k (+ (* i isize1) (* (XM j 1) jsize1) (* k ksize1))]
+              [ijk- (+ (* i isize1) (* j jsize1) (* (XM k 1) ksize1))])
+          (f!-+ tv mij1
+              (* omega
+                (for/fold ([T 0.0]) ([n (in-range 5)])
+                  (+ T
+                     (* (fr ldy (+ (* n isize4) mjk4)) (fr v (+ n ij-k)))
+                     (* (fr ldx (+ (* n isize4) mjk4)) (fr v (+ n i-jk)))))))))
 
-    (for ([C  (in-range 4)]
-          [C5 (in-range 0 16 5)])
-      (let ([tmp1 (/ 1.0 (fr tmat (+ C C5)))])
-      (for ([A  (in-range (+ C 1) 5)])
-        (let ([tmp (* tmp1 (fr tmat (+ A C5)))])
-          (for ([N  (in-range (+ C 1) 5)]
-                [N5  (in-range (+ 5 C5) 21 5)])
-;;            (printf "~a ~a ~a ~a ~a~n" A N5 (fr tmat (+ A N5)) (* tmp (fr tmat (+ C N5))) 
-;;(- (fr tmat (+ A N5)) (* tmp (fr tmat (+ C N5)))))
-            (f!- tmat (+ A N5) (* tmp (fr tmat (+ C N5)))))
-;          (printf "~a ~a ~a ~a ~A\n" (+ A ij1)  (+ C ij1) tmp (fr tv (+ A ij1)) (fr tv (+ C ij1)))
-          (f!- tv (+ A ij1) (* tmp (fr tv (+ C ij1))))))))
-;     (printf "~a ~a\n" (fr tmat (+ 1 20)) (fr tv (+ 4 ij1)))
-    BODY))))))
+
+      (let ([jk4 (+ (* i jsize4) (* j ksize4))])
+        (for ([m (in-range 5)])
+          (for ([n  (in-range 5)]
+                [n5 (in-range 0 21 5)])
+            (f! tmat (+ m n5) (fr d (+ m (* n isize4) jk4))))))
+
+      (for ([C  (in-range 4)]
+            [C5 (in-range 0 16 5)])
+        (let ([tmp1 (/ 1.0 (fr tmat (+ C C5)))])
+        (for ([A  (in-range (+ C 1) 5)])
+          (let ([tmp (* tmp1 (fr tmat (+ A C5)))])
+            (for ([N  (in-range (+ C 1) 5)]
+                  [N5  (in-range (+ 5 C5) 21 5)])
+              (f!- tmat (+ A N5) (* tmp (fr tmat (+ C N5)))))
+            (f!- tv (+ A ij1) (* tmp (fr tv (+ C ij1))))))))
+      BODY)))))))
 
 
 (gen-b_ts blts 1)
@@ -549,12 +519,7 @@
                                         (* zeta (+ (fr ce (+ m (* 9 5)))
                                                  (* zeta (fr ce (+ m (* 12 5))))))))))))))))))))
 
-(define-syntax-rule (NOOP a ...) (void))
-(define-syntax-rule (SEL1 a b c) a)
-(define-syntax-rule (SEL2 a b c) b)
-(define-syntax-rule (SEL3 a b c) c)
-
-(define-syntax-case (flux-flow UD A flux RSD/U QS RHO FRCT nz ny nx
+(define-syntax-case (flux-flow cg UD A flux RSD/U QS RHO FRCT nz ny nx
   c1 c2 c1c5 c3c4 r43 dssp
   isize1 jsize1 ksize1 isize2 jsize3 ksize3
   t_2 t_3 d_1t_1 d_2t_1 d_3t_1 d_4t_1 d_5t_1)
@@ -575,21 +540,6 @@
   #'(let ()
   (define-syntax-rule (RHSU a (... ...)) (PICK2M UD (void) (begin a (... ...))))
   (define-syntax-rule (oneo a (... ...)) (PICK2M UD (/ 1.0 a (... ...)) (begin a (... ...))))
-  (define-syntax-case (PFLV V D)
-    (if (and (= (syntax->datum #'UD) 2)
-        (= (syntax->datum #'A) 2))
-      #'(pflv V D)
-      #'(void)))
-  (define-syntax-case (PFLVE V D)
-    (if (and (= (syntax->datum #'UD) 2)
-        (= (syntax->datum #'A) 2))
-      #'(pflve V D)
-      #'(void)))
-  (define-syntax-case (PF a (... ...))
-    (if (and (= (syntax->datum #'UD) 3)
-        (= (syntax->datum #'A) 2))
-      #'(begin a (... ...))
-      #'(void)))
   (define-syntax-case (RETDET R2 N1 N2 N3 V1 V2 V3 BODY (... ...))
     (with-syntax ([LETBINDINGS (case (syntax->datum #'R2)
                             [(1) #'([N1 V1] [N2 V2] [N3 V3])]
@@ -600,7 +550,7 @@
       BODY (... ...)
     )))
 
-  (for ([kk (in-range 1 nkk)])
+  (CGfor cg ([kk (in-range 1 nkk)])
     (for ([jj (in-range 1 njj)])
       (let ([zmost ZMOST])
 
@@ -633,9 +583,6 @@
                [ii-2 (* (- ii 1) isize2)])
           (for ([m (in-range 5)])
             (let ([mijk1 (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-;              (PF "~a ~a ~a ~a ~a ~a ~a ~a\n" i j k ii ii+2 ii-2  (fr flux (+ m ii+2)) (fr flux (+ m ii-2)))
-;              (PF "~a ~a ~a\n" t_2 (fr FRCT mijk1) (* t_2 (- (fr flux (+ m ii+2))
-;                                        (fr flux (+ m ii-2)))))
               (f!- FRCT mijk1 (* t_2 (- (fr flux (+ m ii+2))
                                         (fr flux (+ m ii-2)))))))))
 
@@ -700,23 +647,23 @@
     dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1
     dnzm1 dnym1 dnxm1)
 
-  (flux-flow 1 1 flux rsd   qs rsd frct nz ny nx
+  (define cgs (CGSingle))
+  (flux-flow cgs 1 1 flux rsd   qs rsd frct nz ny nx
     c1 c2 c1c5 c3c4 r43 dssp
     isize1 jsize1 ksize1 isize2 jsize3 ksize3
     tx2 tx3 dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1)
-
-  (flux-flow 1 2 flux rsd   qs rsd frct nz ny nx
+  (flux-flow cgs 1 2 flux rsd   qs rsd frct nz ny nx
     c1 c2 c1c5 c3c4 r43 dssp
     isize1 jsize1 ksize1 isize2 jsize3 ksize3
     ty2 ty3 dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1)
-  (flux-flow 1 3 flux rsd   qs rsd frct nz ny nx
+  (flux-flow cgs 1 3 flux rsd   qs rsd frct nz ny nx
     c1 c2 c1c5 c3c4 r43 dssp
     isize1 jsize1 ksize1 isize2 jsize3 ksize3
     tz2 tz3 dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1))
 
 ;(define (act flux rsd        frct nz ny nx
 ;             flux rsd qs rsd frct nz ny nx
-(define (rhs flux u   qs rho_i rsd frct nz ny nx
+(define (rhs cg flux u   qs rho_i rsd frct nz ny nx
     c1 c2 c1c5 c3c4 r43 dssp
     isize1 jsize1 ksize1 isize2 jsize3 ksize3
     tx2 tx3 ty2 ty3 tz2 tz3
@@ -740,15 +687,23 @@
           (f! qs ijk3 q)
           (f! rho_i ijk3 rhotmp))))))
 
-  (flux-flow 2 1 flux u qs rho_i rsd nz ny nx
+  (CG-B cg)  
+
+  (flux-flow cg 2 1 flux u qs rho_i rsd nz ny nx
     c1 c2 c1c5 c3c4 r43 dssp
     isize1 jsize1 ksize1 isize2 jsize3 ksize3
     tx2 tx3 dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1)
-  (flux-flow 2 2 flux u qs rho_i rsd nz ny nx
+
+  (CG-B cg)  
+
+  (flux-flow cg 2 2 flux u qs rho_i rsd nz ny nx
     c1 c2 c1c5 c3c4 r43 dssp
     isize1 jsize1 ksize1 isize2 jsize3 ksize3
     ty2 ty3 dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1)
-  (flux-flow 2 3 flux u qs rho_i rsd nz ny nx
+
+  (CG-B cg)  
+
+  (flux-flow cg 2 3 flux u qs rho_i rsd nz ny nx
     c1 c2 c1c5 c3c4 r43 dssp
     isize1 jsize1 ksize1 isize2 jsize3 ksize3
     tz2 tz3 dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1))
@@ -835,7 +790,7 @@
 
 
 (define-syntax-case (define-jac DNAME)
-  #'(define (DNAME a b c d u k rho_i qs nx ny c1 c2 c34 r43 c1345
+  #'(define (DNAME cg a b c d u k rho_i qs nx ny c1 c2 c34 r43 c1345
               isize1 jsize1 ksize1 jsize3 ksize3 isize4 jsize4 ksize4
               dt
               tx1 ty1 tz1
@@ -864,7 +819,7 @@
             [C1C2_2 (C1C2__ C1 C2 C1)]
             [C1C2_3 (C1C2__ C1 C1 C2)])
 
-      (for ([j (jstR ny)])
+      (for ([j (p-range cg (in-range 1 (sub1 ny)))])
         (for ([i (istR nx)])
           (let* (
             ;; LOOP DEPENDENT VARIABLES
@@ -928,7 +883,6 @@
               (RX123 2 (+ (* ty1 r43) tx1 tz1) tds3) 
               (RX123 3 (+ (* tz1 r43) tx1 ty1) tds4)
 
-              ;(printf "~a ~a ~a ~a ~a\n" tmp3 (RX4L 1 C1C2_1) (RX4L 2 C1C2_2) (RX4L 3 C1C2_3) (* t_1s c1345 tmp2 (fr u (+ 4 ijk1))))
               (DIAG0 d 4 
                 (* -2.0 dt (+ (* tmp3
                                  (+ (RX4L 1 C1C2_1)
@@ -959,8 +913,6 @@
       [else (printf "PICK2 error ~a~n" (syntax->datum R2))])))
   (define-syntax-case (PICK3 R2 V1 V2 V3) 
     #'(begin 
-;      (printf "PICK3 ~a ~a ~a ~a\n" (syntax->datum R2) (syntax->datum V1) (syntax->datum V2) (syntax->datum V3))
-      ;(printf "PICK3 ~a ~a ~a\n" R2 V1 V2 V3)
       (case (syntax->datum R2) [(1) V1] [(2) V2] [(3) V3]
       [else (raise (format "~a" (syntax->datum R2)))])))
   (with-syntax ([+- (PICK2 #'UD #'- #'+)])
@@ -1277,8 +1229,8 @@
                                  (- (* pzeta pxi))
                                  (* pxi peta pzeta)))))))))))))
 
-(define (sssor a b c d u rsd rsdnm tv nx ny nz itmax inorm dt omega isize1 jsize1 ksize1 isize4 jsize4 ksize4
-          rho_i flux qs frct
+(define (sssor cg a b c d u rsd rsdnm tv_ nx ny nz itmax inorm dt omega isize1 jsize1 ksize1 isize4 jsize4 ksize4
+          rho_i flux_ qs frct
           r43 c1345 c1 c2 c1c5 c3c4 dssp
           isize2 jsize3 ksize3
           tx1 tx2 tx3
@@ -1294,6 +1246,11 @@
   (define delunm (make-flvector 5 0.0))
   (define tmat (make-flvector (* 5 5) 0.0))
   (define tolrsd (make-flvector 5 0.00000001))
+  (define flux (make-flvector (* 5 nx)  0.0))
+  (define tv (make-flvector (* 5 (add1 nx) nx)   0.0))
+
+
+  (CG-n0-only cg
   (for ([j (in-range ny)]
         [i (in-range nx)]
         [n (in-range 5)]
@@ -1302,77 +1259,9 @@
       (f! a idx 0.0)
       (f! b idx 0.0)
       (f! c idx 0.0)
-      (f! d idx 0.0)))
+      (f! d idx 0.0))))
 
-
-  (rhs flux u qs rho_i rsd frct nz ny nx
-    c1 c2 c1c5 c3c4 r43 dssp
-    isize1 jsize1 ksize1 isize2 jsize3 ksize3
-    tx2 tx3 ty2 ty3 tz2 tz3
-    dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
-    dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
-    dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
-
-  (l2norm nx ny nz rsd rsdnm isize1 jsize1 ksize1)
-
-  (timer-start 1)
-  
-
-  (for ([istep (in-range 1 (add1 itmax))])
-    (when (or (zero? (modulo istep 20)) (= istep itmax) (= istep 1))
-      (printf " Time step ~a\n" istep))
-
-    (for* ([k (kstR nz)]
-           [j (jstR ny)]
-           [i (istR nx)]
-           [m (in-range 5)])
-      (f!* rsd (+ m (* i isize1) (* j jsize1) (* k ksize1)) dt))
-
-    (for ([k (in-range 1 (sub1 nz))]) 
-      (jacld a b c d u k rho_i qs nx ny c1 c2 c3c4 r43 c1345
-        isize1 jsize1 ksize1 jsize3 ksize3 isize4 jsize4 ksize4
-        dt
-        tx1 ty1 tz1
-        tx2 ty2 tz2
-        dx1 dy1 dz1
-        dx2 dy3 dz2
-        dx5 dy5 dz5
-        dx1tx1 dy1ty1 dz1tz1
-        dx2tx1 dy2ty1 dz2tz1
-        dx3tx1 dy3ty1 dz3tz1
-        dx4tx1 dy4ty1 dz4tz1
-        dx5tx1 dy5ty1 dz5tz1)
-      (blts tmat rsd tv a b c d nx ny nz k omega isize1 jsize1 ksize1 isize4 jsize4 ksize4)
-)
-
-    (for ([k (in-range (- nz 2) 0 -1)]) 
-      (jacu a b c d u k rho_i qs nx ny c1 c2 c3c4 r43 c1345
-        isize1 jsize1 ksize1 jsize3 ksize3 isize4 jsize4 ksize4
-        dt
-        tx1 ty1 tz1
-        tx2 ty2 tz2
-        dx1 dy1 dz1
-        dx2 dy3 dz2
-        dx5 dy5 dz5
-        dx1tx1 dy1ty1 dz1tz1
-        dx2tx1 dy2ty1 dz2tz1
-        dx3tx1 dy3ty1 dz3tz1
-        dx4tx1 dy4ty1 dz4tz1
-        dx5tx1 dy5ty1 dz5tz1)
-      (buts tmat rsd tv c b a d nx ny nz k omega isize1 jsize1 ksize1 isize4 jsize4 ksize4))
-
-    (let ([tmp (/ 1.0 (* omega (- 2.0 omega)))]) 
-      (for* ([k (kstR nz)]
-             [j (jstR ny)]
-             [i (istR nx)]
-             [m (in-range 5)])
-        (let ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
-          (f!+ u idx (* tmp (fr rsd idx))))))
-
-    (when (zero? (modulo istep inorm))
-      (l2norm nx ny nz rsd delunm isize1 jsize1 ksize1))
-
-    (rhs flux u qs rho_i rsd frct nz ny nx
+    (rhs cg flux u qs rho_i rsd frct nz ny nx
       c1 c2 c1c5 c3c4 r43 dssp
       isize1 jsize1 ksize1 isize2 jsize3 ksize3
       tx2 tx3 ty2 ty3 tz2 tz3
@@ -1380,15 +1269,94 @@
       dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
       dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
 
-    (when (or (zero? (modulo istep 20)) (= istep itmax))
-      (l2norm nx ny nz rsd rsdnm isize1 jsize1 ksize1))
 
-    (when (and ((fr rsdnm 0) . < . (fr tolrsd 0))
-             ((fr rsdnm 1) . < . (fr tolrsd 1))
-             ((fr rsdnm 2) . < . (fr tolrsd 2))
-             ((fr rsdnm 3) . < . (fr tolrsd 3))
-             ((fr rsdnm 4) . < . (fr tolrsd 4)))
-      (timer-stop 1)))
+  (CG-n0-only cg
+
+    (l2norm nx ny nz rsd rsdnm isize1 jsize1 ksize1)
+
+    (timer-start 1))
+  
+  (for ([istep (in-range 1 (add1 itmax))])
+    (CG-n0-only cg
+      (when (or (zero? (modulo istep 20)) (= istep itmax) (= istep 1))
+        (printf " Time step ~a\n" istep)))
+
+    (for* ([k (p-range cg (in-range 1 (sub1 nz)))]
+           [j (jstR ny)]
+           [i (istR nx)]
+           [m (in-range 5)])
+      (f!* rsd (+ m (* i isize1) (* j jsize1) (* k ksize1)) dt))
+
+    (CG-B cg)
+
+    (for ([k (in-range 1 (sub1 nz))]) 
+      (jacld cg a b c d u k rho_i qs nx ny c1 c2 c3c4 r43 c1345
+        isize1 jsize1 ksize1 jsize3 ksize3 isize4 jsize4 ksize4
+        dt
+        tx1 ty1 tz1
+        tx2 ty2 tz2
+        dx1 dy1 dz1
+        dx2 dy3 dz2
+        dx5 dy5 dz5
+        dx1tx1 dy1ty1 dz1tz1
+        dx2tx1 dy2ty1 dz2tz1
+        dx3tx1 dy3ty1 dz3tz1
+        dx4tx1 dy4ty1 dz4tz1
+        dx5tx1 dy5ty1 dz5tz1)
+      (CG-B cg)
+      (blts cg tmat rsd tv a b c d nx ny nz k omega isize1 jsize1 ksize1 isize4 jsize4 ksize4)
+      (CG-B cg))
+
+
+    (for ([k (in-range (- nz 2) 0 -1)]) 
+      (jacu cg a b c d u k rho_i qs nx ny c1 c2 c3c4 r43 c1345
+        isize1 jsize1 ksize1 jsize3 ksize3 isize4 jsize4 ksize4
+        dt
+        tx1 ty1 tz1
+        tx2 ty2 tz2
+        dx1 dy1 dz1
+        dx2 dy3 dz2
+        dx5 dy5 dz5
+        dx1tx1 dy1ty1 dz1tz1
+        dx2tx1 dy2ty1 dz2tz1
+        dx3tx1 dy3ty1 dz3tz1
+        dx4tx1 dy4ty1 dz4tz1
+        dx5tx1 dy5ty1 dz5tz1)
+      (CG-B cg)
+      (buts cg tmat rsd tv c b a d nx ny nz k omega isize1 jsize1 ksize1 isize4 jsize4 ksize4)
+      (CG-B cg))
+
+    (CG-n0-only cg
+    (let ([tmp (/ 1.0 (* omega (- 2.0 omega)))]) 
+      (for* ([k (kstR nz)]
+             [j (jstR ny)]
+             [i (istR nx)]
+             [m (in-range 5)])
+        (let ([idx (+ m (* i isize1) (* j jsize1) (* k ksize1))])
+          (f!+ u idx (* tmp (fr rsd idx)))))))
+
+    (CG-n0-only cg
+      (when (zero? (modulo istep inorm))
+        (l2norm nx ny nz rsd delunm isize1 jsize1 ksize1)))
+
+    (rhs cg flux u qs rho_i rsd frct nz ny nx
+      c1 c2 c1c5 c3c4 r43 dssp
+      isize1 jsize1 ksize1 isize2 jsize3 ksize3
+      tx2 tx3 ty2 ty3 tz2 tz3
+      dx1tx1 dx2tx1 dx3tx1 dx4tx1 dx5tx1
+      dy1ty1 dy2ty1 dy3ty1 dy4ty1 dy5ty1
+      dz1tz1 dz2tz1 dz3tz1 dz4tz1 dz5tz1)
+
+    (CG-n0-only cg
+      (when (or (zero? (modulo istep 20)) (= istep itmax))
+        (l2norm nx ny nz rsd rsdnm isize1 jsize1 ksize1))
+
+      (when (and ((fr rsdnm 0) . < . (fr tolrsd 0))
+               ((fr rsdnm 1) . < . (fr tolrsd 1))
+               ((fr rsdnm 2) . < . (fr tolrsd 2))
+               ((fr rsdnm 3) . < . (fr tolrsd 3))
+               ((fr rsdnm 4) . < . (fr tolrsd 4)))
+        (timer-stop 1))))
   (timer-stop 1))
 
 
