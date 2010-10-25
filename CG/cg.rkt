@@ -12,41 +12,29 @@
 (require (for-syntax scheme/base))
 
 (require (only-in scheme/flonum make-flvector make-shared-flvector flvector-length))
+#|
 (require (only-in scheme/flonum flvector-set! flvector-ref fl+ fl- fl* fl/))
 (define vr vector-ref)
 (define vs! vector-set!)
 (define flvs! flvector-set!)
 (define flvr flvector-ref)
-#|
 |#
 
 #|
-(require scheme/fixnum scheme/flonum)
-
-(require (only-in scheme/flonum make-flvector make-shared-flvector)
-         scheme/require (for-syntax scheme/base)
-   (filtered-in
-    (lambda (name) (regexp-replace #rx"unsafe-" name ""))
-    scheme/unsafe/ops))
-(require (rename-in scheme/unsafe/ops
-                    [unsafe-vector-ref vr] 
-                    [unsafe-vector-set! vs!]
-                    [unsafe-flvector-ref flvr] 
-                    [unsafe-flvector-set! flvs!]))
 |#
-
-#|
+(require (only-in scheme/flonum [fl+ fl+X]))
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
                     [unsafe-flvector-ref flvr] 
                     [unsafe-flvector-set! flvs!]
+#|
+|#
                     [unsafe-fl+ fl+]
                     [unsafe-fl- fl-]
                     [unsafe-fl* fl*]
                     [unsafe-fl/ fl/]
 ))
-|#
  
 ;Constants 
 (define amult 1220703125.0)
@@ -123,9 +111,6 @@
         (let ([verified (verify zeta zeta-verify-value)])
           (print-banner "Conjugate Gradient" args) 
           (printf "Size = ~a niter = ~a~n" na niter) 
-          (if serial 
-              (printf "SERIAL~n")
-              (printf "PARALLEL~n"))
           (if verified 
               (printf "Verification succeeded~n") 
               (printf "Verification failed~n"))
@@ -420,7 +405,7 @@
         (let ([xj (flvr x j)])
           (flvs! r j xj)
           (flvs! p j xj)
-          (+ rho (fl* xj xj)))))
+          (fl+ rho (fl* xj xj)))))
     (CG-n0-only cg (flvs! presults RHO (for/fold ([rho 0.0]) ([m (in-range np)]) (fl+ rho (flvr rhomaster m)))))
 
 
@@ -432,7 +417,7 @@
 
       (flvs! dmaster id
         (for/fold ([d 0.0]) ([j (p-range cg (in-range 1 (add1 nrows)))])
-                    (fl+ d (fl* (flvr p j) (flvr q j)))))
+                    (fl+X d (fl* (flvr p j) (flvr q j)))))
 
       (CG-n0-only cg
         (flvs! presults ALPHA
@@ -447,7 +432,7 @@
             (let ([nrj (fl- (flvr r j) (fl* alpha (flvr q j)))])
               (flvs!+ z j (fl* alpha (flvr p j)))
               (flvs! r j nrj) 
-              (fl+ rho (fl* nrj nrj))))))
+              (fl+X rho (fl* nrj nrj))))))
 
       (CG-n0-only cg
         (let ([rho (for/fold ([rho 0.0])  ([m (in-range np)]) (fl+ rho (flvr rhomaster m)))])

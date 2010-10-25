@@ -110,10 +110,3 @@
       (place-channel-recv ch)
       body ...
        (place-channel-send ch 1)]))
-
-(define (pflvec cg v d)
-  (for ([i (p-range cg (in-range (flvector-length v)))])
-    (printf "~a ~a ~a\n" d i (flvector-ref v i)))
-  (flush-output)
-  (exit 0))
-
