@@ -5,7 +5,7 @@
 (require (for-syntax racket/base))
 (require racket/flonum)
 
-(provide CGspawn CG-n0-only CG-B CGfor CGid CGSingle CGSerial p-range CGpipeline)
+(provide CGspawn CG-n0-only CG-B CGfor CGid CGnp CGSingle CGSerial p-range CGpipeline)
 
 (define-syntax-rule (!or= x b ...)
   (not (ormap (lambda (y) (= x y)) (list b ...))))
@@ -25,7 +25,8 @@
 
 (define-struct CG (id np pls))
 
-(define (CGid cg) (match cg [(CG id _ _) id]))
+(define (CGid cg) (CG-id cg))
+(define (CGnp cg) (CG-np cg))
 
 (define (CG-0-send cg)
   (match cg
