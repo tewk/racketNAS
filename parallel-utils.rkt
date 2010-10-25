@@ -3,22 +3,27 @@
 (require racket/place)
 (require racket/place-utils)
 (require (for-syntax racket/base))
-(require racket/flonum)
+(require (only-in racket/unsafe/ops [unsafe-fx+ fx+]
+                                    [unsafe-fx- fx-]
+                                    [unsafe-fx* fx*]
+                                    [unsafe-fx= fx=]
+                                    [unsafe-fx< fx<]
+                                    [unsafe-fxabs fxabs]))
 
 (provide CGspawn CG-n0-only CG-B CGfor CGid CGnp CGSingle CGSerial p-range CGpipeline)
 
 (define-syntax-rule (!or= x b ...)
-  (not (ormap (lambda (y) (= x y)) (list b ...))))
+  (not (ormap (lambda (y) (fx= x y)) (list b ...))))
 
 (define (stripe-range cg i st en step np)
   (when  (!or= step 1 -1)
     (error "step must be 1 or -1, not ~a" step))
-  (define ec (abs (- en st)))
-  (define step-sign (if (negative? step) - +))
+  (define ec (fxabs (fx- en st)))
+  (define step-sign (if (negative? step) fx- fx+))
   (define-values (chunk-size rem) (quotient/remainder ec np))
-  (define-values (soff eoff) (if (i . < . rem) (values i (+ i 1)) (values rem rem)))
-  (define start (step-sign st (+ (* i chunk-size) soff)))
-  (define end (step-sign st (+ (* (+ i 1) chunk-size) eoff)))
+  (define-values (soff eoff) (if (i . fx< . rem) (values i (fx+ i 1)) (values rem rem)))
+  (define start (step-sign st (fx+ (fx* i chunk-size) soff)))
+  (define end (step-sign st (fx+ (fx* (fx+ i 1) chunk-size) eoff)))
 ;  (printf "SR ~a ~a ~a ~a ~a ~a ~a\n" st en step i np start end)
 ;  (flush-output)
   (in-range start end step))

@@ -9,11 +9,11 @@
 (require "../parallel-utils.rkt")
 (require "../debug.rkt")
 (require racket/math)
-(require (for-syntax scheme/base))
+(require (for-syntax racket/base))
 
-(require (only-in scheme/flonum make-flvector make-shared-flvector flvector-length))
+(require (only-in racket/flonum make-flvector make-shared-flvector flvector-length))
 #|
-(require (only-in scheme/flonum flvector-set! flvector-ref fl+ fl- fl* fl/))
+(require (only-in racket/flonum flvector-set! flvector-ref fl+ fl- fl* fl/))
 (define vr vector-ref)
 (define vs! vector-set!)
 (define flvs! flvector-set!)
@@ -22,8 +22,8 @@
 
 #|
 |#
-(require (only-in scheme/flonum [fl+ fl+X]))
-(require (rename-in scheme/unsafe/ops
+(require (only-in racket/flonum [fl+ fl+X]))
+(require (rename-in racket/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
                     [unsafe-flvector-ref flvr] 

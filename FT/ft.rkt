@@ -6,49 +6,29 @@
 (require "../bm-results.rkt") 
 (require "../rand-generator.rkt")
 (require "../timer.rkt")
+(require "../parallel-utils.rkt")
 (require racket/future)
 (require racket/list)
 (require racket/match)
 (require racket/math)
-(require racket/place)
-(require racket/place-utils)
+(require (for-syntax racket/base))
 
 #;(require scheme/fixnum scheme/flonum)
 
 (require (only-in scheme/flonum make-flvector make-shared-flvector)
-         scheme/require (for-syntax scheme/base)
-   (filtered-in
-    (lambda (name) (regexp-replace #rx"unsafe-" name ""))
-    scheme/unsafe/ops))
-
-(define (comgrp-wait grp)
-  (match grp
-    [(list 0 pls np) (for ([ch pls]) (place-channel-send ch 0))]
-    [(list n ch np)  (place-channel-recv ch)]))
-(define (comgrp-tell grp)
-  (match grp
-    [(list 0 pls np) (for ([ch pls]) (place-channel-recv ch))]
-    [(list n ch np)  (place-channel-send ch 1)]))
-
-(define-syntax-rule (when0 np body ...)
-   (unless (and (pair? np) (not (= (first np) 0)))
-    body ...))
-
-(define (barrier2 grp)
-  (when (pair? grp)
-  (comgrp-tell grp)
-  ;(when0 grp (printf "===================\n"))
-  (comgrp-wait grp)))
+         racket/require
+         (filtered-in (lambda (name) (regexp-replace #rx"unsafe-" name "")) scheme/unsafe/ops))
 
 (define DOPLACES #t)
+(define mkflvec (if DOPLACES make-shared-flvector make-flvector))
 
 (define-syntax (pfor stx)
   (syntax-case stx (in-range)
-    [(_ serial nproc ([loopvar (in-range imax)]) ([letname letval] ... ) body ...)
+    [(_ cg serial nproc ([loopvar (in-range imax)]) ([letname letval] ... ) body ...)
        (begin
          (unless (identifier? #'lv) (raise-syntax-error 'parray "expected an identifier" stx #'lv))
          #'(if (not serial)
-           (if (not (pair? nproc))
+           (if (not DOPLACES)
              (let ([per-future (ceiling (/ imax nproc))])
                (for ([f (in-list
                          (for/list ([i (in-range 0 nproc)])
@@ -58,34 +38,12 @@
                                   (for ([loopvar (in-range (fx* i per-future) (min imax (fx* (fx+ i 1) per-future)))])
                                     body ...))))))])
                  (touch f)))
-             (match nproc
-               [(and (list i ch np) grp)
-               (barrier2 grp)
-               (let ([per-future (ceiling (/ imax np))])
-                (let ([letname (vector-ref letval i)]...)
-                  ;(printf "PGRP ~a ~a ~a\n" i (fx* i per-future) (min imax (fx* (fx+ i 1) per-future))) 
-                  (for ([loopvar (in-range (fx* i per-future) (min imax (fx* (fx+ i 1) per-future)))])
-                    body ...)))
-               (barrier2 grp)]))
+             (begin
+               (CG-B cg)
+               (for ([loopvar (p-range cg (in-range imax))])
+                 body ...)
+               (CG-B cg)))
            (for ([loopvar (in-range imax)]) body ...)))]))
-
-(define-syntax (palloc stx)
-  (syntax-case stx (in-range)
-    [(_ serial nproc body ...)
-     #'(if (not serial)
-        (apply vector (for/list ([i (in-range nproc)]) body ...))
-        (begin body ...))]))
-
-(define timers (make-vector 30 0.0))
-#;(define-syntax (timer stx)
-  (syntax-case stx ()
-    [(_ id body ...)
-      #'(let-values ([(results cpu real gc)
-        (time-apply (lambda () body ...) null)])
-        (vector-set! timers id (+ (vector-ref timers id) real))
-        (if (pair? results)
-          (car results)
-          (void)))]))
 
 (define-syntax (timer stx)
   (syntax-case stx ()
@@ -125,10 +83,16 @@
 
   (print-banner "Fourier Transform" args) 
   (printf "Size = ~a X ~a X ~a niter = ~a~n" nx ny nz niter-default) 
-  (if serial 
-      (printf "SERIAL~n")
-      (printf "PARALLEL~n"))
-  (app-ft nx ny nz maxdim niter-default checksum serial num-threads) 
+
+  (let ([exp1 (mkflvec (* 2 nx) 0.0)] 
+        [exp2 (mkflvec (* 2 ny) 0.0)] 
+        [exp3 (mkflvec (* 2 nz) 0.0)]
+        [xtr  (mkflvec (* (* (* 2 (+ ny 1)) nx) nz) 0.0)]
+        [xnt  (mkflvec (* (* (* 2 (+ ny 1)) nz) nx) 0.0)])
+
+    (CGspawn (if (or serial (not DOPLACES)) 0 num-threads)
+             fft-body nx ny nz exp1 exp2 exp3 xnt xtr maxdim niter-default checksum serial num-threads))
+
   (timer 14
     (let ([verified (verify bmname CLASS niter-default checksum)])
       (if verified 
@@ -143,8 +107,7 @@
                                      serial 
                                      num-threads 
                                      0)]) 
-        (print-results results) 
-        (when #f (print-timers)))))))))
+        (print-results results))))))))
 
 ;;ilog2 : int -> int
 (define (ilog2 n) 
@@ -190,8 +153,6 @@
                     (flvector-set! xnt (fx+ REAL idx1) (fl* (flvector-ref xtr (fx+ REAL idx2)) flval)) 
                     (flvector-set! xnt (fx+ IMAG idx1) (fl* (flvector-ref xtr (fx+ IMAG idx2)) flval))))))))
 
-(define alpha .000001)
-
 (define-syntax-rule (helper2 k sign log ic jc isize3 jsize3 ksize3 isize1 jsize1 x plane exp scr)
   (begin
     (define-syntax-rule (x->plane x x-idx plane plane-idx RI)
@@ -211,54 +172,29 @@
     (swarztrauber sign log jc ic plane 0 jc exp scr) 
     (helper3 k ic jc isize3 jsize3 ksize3 isize1 jsize1 x plane plane->x)))
 
-(define-syntax-rule (place-fft-xyz sign x scr plane exp1 exp2 exp3 n1 n2 n3 log1 log2 log3 isize3 jsize3 ksize3 isize1 jsize11 jsize12 serial np) 
+(define-syntax-rule (fft-xyz cg sign x scr plane exp1 exp2 exp3 n1 n2 n3 log1 log2 log3 isize3 jsize3 ksize3 isize1 jsize11 jsize12 serial np) 
   (begin
-    (pfor serial np ([k (in-range n3)]) 
+    (pfor cg serial np ([k (in-range n3)]) 
       ([scr scr])
       (swarztrauber sign log2 n1 n2 x (fx* k ksize3) n1 exp2 scr))
 
-    (pfor serial np ([k (in-range n3)])
+    (pfor cg serial np ([k (in-range n3)])
       ([scr scr]
        [plane plane])
       (helper2 k sign log1 n1 n2 isize3 jsize3 ksize3 isize1 jsize11 x plane exp1 scr))
 
-    (pfor serial np ([k (in-range n2)])
+    (pfor cg serial np ([k (in-range n2)])
       ([scr scr]
        [plane plane])
       (helper2 k sign log3 n3 n1 ksize3 isize3 jsize3 isize1 jsize12 x plane exp3 scr))))
 
-(define (app-ft nx ny nz maxdim niter-default checksum serial np)
-  (define mkflvec (if DOPLACES make-shared-flvector make-flvector))
-  (let (
-        [exp1 (mkflvec (* 2 nx) 0.0)] 
-        [exp2 (mkflvec (* 2 ny) 0.0)] 
-        [exp3 (mkflvec (* 2 nz) 0.0)]
-        [xtr (mkflvec (* (* (* 2 (+ ny 1)) nx) nz) 0.0)]
-        [xnt (mkflvec (* (* (* 2 (+ ny 1)) nz) nx) 0.0)]
-        [scr (palloc serial np (mkflvec (* (* 2 (+ maxdim 1)) maxdim) 0.0))]
-        [plane (palloc serial np (mkflvec (* (* 2 (+ maxdim 1)) maxdim) 0.0))])
-    (if DOPLACES
-      (let ()
-      (define pls (for/list ([i (in-range 1 np)])
-        (place/main (pwkr ch)
-          (match (place-channel-recv ch)
-            [(list id nx ny nz exp1 exp2 exp3 xnt xtr scr plane maxdim niter-default checksum serial np)
-              (place-app-ft2 nx ny nz exp1 exp2 exp3 xnt xtr scr plane maxdim niter-default checksum serial (list id ch np))]))))
+(define (fft-body cg nx ny nz exp1 exp2 exp3 xnt xtr maxdim niter-default checksum serial np)
+  (define alpha .000001)
+  (define-syntax-rule (palloc serial nproc body ...)
+    (if (and (not serial) (not DOPLACES))
+      (apply vector (for/list ([i (in-range nproc)]) body ...))
+      (begin body ...)))
 
-      (for ([i (in-range 1 np)]
-            [ch pls])
-        (place-channel-send ch (list i nx ny nz exp1 exp2 exp3 xnt xtr scr plane maxdim niter-default checksum serial np)))
-      (place-app-ft2 nx ny nz exp1 exp2 exp3 xnt xtr scr plane maxdim niter-default checksum serial (list 0 pls np)))
-    (place-app-ft2 nx ny nz exp1 exp2 exp3 xnt xtr scr plane maxdim niter-default checksum serial np))))
-
-
-(define (place-app-ft2 nx ny nz exp1 exp2 exp3 xnt xtr scr plane maxdim niter-default checksum serial np)
-  (define-syntax-rule (whenp body ...)
-    (when (pair? np)
-      body ...))
-  (define-syntax-rule (when0 body ...)
-    (unless (and (pair? np) (not (= (first np) 0)))
-      body ...))
   (let ([isize1 2]
         [isize2 2]
         [isize3 2]
@@ -276,31 +212,32 @@
         [n32 (quotient nz 2)]
         [logx (ilog2 nx)]
         [logy (ilog2 ny)]
-        [logz (ilog2 nz)])
-  (eprintf "~a~n" np)
+        [logz (ilog2 nz)]
+        [scr (palloc serial np (mkflvec (* (* 2 (+ maxdim 1)) maxdim) 0.0))]
+        [plane (palloc serial np (mkflvec (* (* 2 (+ maxdim 1)) maxdim) 0.0))])
+
   (timer 2
-    (when0
+    (CG-n0-only cg
       (initial-conditions xtr ny nx nz maxdim) 
       (comp-exp nx exp1) 
       (comp-exp ny exp2) 
       (comp-exp nz exp3))
-    ;(whenp (printf "xtr ~a~n" (flvector-ref xtr 10)))
-    (place-fft-xyz 1.0 xtr scr plane exp2 exp1 exp3 ny nx nz logy logx logz isize3 jsize3 ksize3 isize1 jsize11 jsize12 serial np))
+    (fft-xyz cg 1.0 xtr scr plane exp2 exp1 exp3 ny nx nz logy logx logz isize3 jsize3 ksize3 isize1 jsize11 jsize12 serial np))
 
     (timer-start 1) 
     (timer 12
-      (when0
+      (CG-n0-only cg
         (initial-conditions xtr ny nx nz maxdim))
-    (place-fft-xyz 1.0 xtr scr plane exp2 exp1 exp3 ny nx nz logy logx logz isize3 jsize3 ksize3 isize1 jsize11 jsize12 serial np))
+    (fft-xyz cg 1.0 xtr scr plane exp2 exp1 exp3 ny nx nz logy logx logz isize3 jsize3 ksize3 isize1 jsize11 jsize12 serial np))
   (timer 15
     (for ([it (in-range niter-default)]) 
       (timer 11
-      (pfor serial np ([i (in-range nx)]) ()
+      (pfor cg serial np ([i (in-range nx)]) ()
         (helper1 i it ap n12 n22 n32 nx ny nz isize4 jsize4 ksize4 isize3 jsize3 ksize3 xnt xtr)))
       (timer 15
-      (place-fft-xyz -1.0 xnt scr plane exp2 exp3 exp1 ny nz nx logy logz logx isize4 jsize4 ksize4 isize1 jsize13 jsize12 serial np))
+      (fft-xyz cg -1.0 xnt scr plane exp2 exp3 exp1 ny nz nx logy logz logx isize4 jsize4 ksize4 isize1 jsize13 jsize12 serial np))
       (timer 10
-        (when0
+        (CG-n0-only cg
             (calculate-checksum checksum (fx+ REAL (fx* it isize2)) it xnt ny nz nx)))))))
 
 (define-syntax-rule (swarztrauber-worker is n exponent block-start block-end l j x jsize1 scr lk li kbt-offset1 kbt-offset1o kbt-offset2)
@@ -375,11 +312,9 @@
   )))))))
 
 (define (get-mflops total-time nx ny nz) 0)
-(define (print-timers) 0)
-
 
 (define (initial-conditions u0 d1 d2 d3 maxdim) 
-  (let* ([tmp (make-vector (* 2 maxdim) 0.0)] 
+  (let* ([tmp (make-flvector (* 2 maxdim) 0.0)] 
          [ran-starts (make-vector maxdim 0.0)] 
          [seed 314159265.0] 
          [a (expt 5.0 13)] 
@@ -407,8 +342,8 @@
             (for ([i (in-range d2)])
               (let ([dest-idx (+ (+ (* j isize3) (* i jsize3)) (* k ksize3))]
                     [iidx (* i 2)])
-                (flvector-set! u0 (+ REAL dest-idx) (vector-ref tmp (+ REAL iidx)))
-                (flvector-set! u0 (+ IMAG dest-idx) (vector-ref tmp (+ IMAG iidx)))))))))))
+                (flvector-set! u0 (+ REAL dest-idx) (flvector-ref tmp (+ REAL iidx)))
+                (flvector-set! u0 (+ IMAG dest-idx) (flvector-ref tmp (+ IMAG iidx)))))))))))
 
 (define (calculate-checksum csum csmffst iterN u d1 d2 d3) 
   (let* (
