@@ -3,8 +3,9 @@
 (require racket/place)
 (require racket/place-utils)
 (require (for-syntax racket/base))
+(require racket/flonum)
 
-(provide CGspawn CG-n0-only CG-B CGfor CGid CGSingle CGforS CGSerial p-range CGforSS)
+(provide CGspawn CG-n0-only CG-B CGfor CGid CGSingle CGSerial p-range CGpipeline)
 
 (define-syntax-rule (!or= x b ...)
   (not (ormap (lambda (y) (= x y)) (list b ...))))
@@ -18,23 +19,23 @@
   (define-values (soff eoff) (if (i . < . rem) (values i (+ i 1)) (values rem rem)))
   (define start (step-sign st (+ (* i chunk-size) soff)))
   (define end (step-sign st (+ (* (+ i 1) chunk-size) eoff)))
-;;;  (printf "SR ~a ~a ~a ~a ~a ~a ~a\n" st en step i np start end)
-;;;  (flush-output)
+;  (printf "SR ~a ~a ~a ~a ~a ~a ~a\n" st en step i np start end)
+;  (flush-output)
   (in-range start end step))
 
-(define-struct CG (id np ch))
+(define-struct CG (id np pls))
 
 (define (CGid cg) (match cg [(CG id _ _) id]))
 
 (define (CG-0-send cg)
   (match cg
-    [(CG 0  np pls) (for ([ch pls]) (place-channel-send ch 0))]
-    [(CG id np ch ) (place-channel-recv ch)])-)
+    [(CG 0  np (list-rest _ pls)) (for ([ch pls]) (place-channel-send ch 0))]
+    [(CG id np (list-rest ch  _)) (place-channel-recv ch)]))
 
 (define (CG-0-recv cg)
   (match cg
-    [(CG 0  np pls) (for ([ch pls]) (place-channel-recv ch))]
-    [(CG id np ch ) (place-channel-send ch 1)]))
+    [(CG 0  np (list-rest _ pls)) (for ([ch pls]) (place-channel-recv ch))]
+    [(CG id np (list-rest ch  _)) (place-channel-send ch 1)]))
 
 (define-syntax-rule (when0 np body ...)
    (unless (and (pair? np) (not (= (car np) 0)))
@@ -43,7 +44,7 @@
 (define (CG-B cg)
   (match cg
     [(CG _ 0 _) (void)]
-    [(CG id _ _) 
+    [else
       (CG-0-recv cg)
       (CG-0-send cg)]))
 
@@ -57,14 +58,14 @@
       (define pls (for/list ([i (in-range 1 np)])
         (place/main (pwkr ch)
           (match (place-channel-recv ch)
-            [(list id np args ...)
-              (func (make-CG id np ch) args ...)]))))
+            [(list id np pls args ...)
+              (func (make-CG id np (cons ch pls)) args ...)]))))
 
       (for ([i (in-range 1 np)]
             [ch pls])
-        (place-channel-send ch (list i np args ...))) 
+        (place-channel-send ch (list i np pls args ...))) 
 
-      (func (make-CG  0 np pls) args ...)]))
+      (func (make-CG 0 np (cons #f pls)) args ...)]))
 
 (define-syntax-rule (CG-n0-only cg body ...)
   (match cg
@@ -89,38 +90,29 @@
       (for ([V (stripe-range cg id ST EN 1 np)])
         body ...)]))
 
+(define-syntax-rule (CGpipeline cg body ...)
+  (match cg
+    [(CG _ 0 _) body ...]
+    [(CG id np pls) 
+      (unless (= id 0) (place-channel-recv (car pls)))
+      body ...
+      (unless (= id (sub1 np)) (place-channel-send (list-ref pls (add1 id)) 9))]))
+
 (define-syntax-rule (CGSerial cg body ...)
   (match cg
     [(CG _ 0 _) body ...]
-    [(CG (and 0 id) np pls)
+    [(CG (and 0 id) np (list-rest _ pls))
      body ... 
      (for ([ch pls]) (place-channel-send ch 0)
                      (place-channel-recv ch))]
-    [(CG id np ch) 
+    [(CG id np (list-rest ch _)) 
       (place-channel-recv ch)
       body ...
-      (place-channel-send ch 1)]))
+       (place-channel-send ch 1)]))
 
-(define-syntax-rule (CGforS cg ([V (in-range ST EN)]) body ...)
-  (match cg
-    [(CG _ 0 _) (for ([V (in-range ST EN)]) body ...)]
-    [(CG (and 0 id) np pls) 
-      (for ([V (stripe-range cg id ST EN 1 np)]) body ...)
-      (for ([ch pls]) (place-channel-send ch 0)
-                      (place-channel-recv ch))]
-    [(CG id np ch) 
-      (place-channel-recv ch)
-      (for ([V (stripe-range cg id ST EN 1 np)]) body ...)
-      (place-channel-send ch 1)]))
+(define (pflvec cg v d)
+  (for ([i (p-range cg (in-range (flvector-length v)))])
+    (printf "~a ~a ~a\n" d i (flvector-ref v i)))
+  (flush-output)
+  (exit 0))
 
-(define-syntax-rule (CGforSS cg ([V R]) body ...)
-  (match cg
-    [(CG _ 0 _) (for ([V R]) body ...)]
-    [(CG (and 0 id) np pls) 
-      (for ([V R]) body ...)
-      (for ([ch pls]) (place-channel-send ch 0)
-                      (place-channel-recv ch))]
-    [(CG id np ch) 
-      (place-channel-recv ch)
-      (for ([V R]) body ...)
-      (place-channel-send ch 1)]))
