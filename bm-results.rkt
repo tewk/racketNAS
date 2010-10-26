@@ -67,15 +67,15 @@
 
 ;;print-verification-status : char number string -> void
 (define (print-verification-status cls verified bmname) 
-  (cond 
-    [(or (char=? cls #\U) (= verified -1)) 
-     (begin 
-       (printf "Problem size unknown~n") 
-       (printf "~a.~a: Verification Not Performed~n" bmname cls))] 
-    [(= verified 1) 
-     (printf "~a.~a: Verification Successful~n" bmname cls)] 
-    [else 
-     (printf "~a.~a: Verification Failed~n" bmname cls)]))
+  (when (or (char=? cls #\U) (and (number? verified) (= verified -1)))
+    (printf "Problem size unknown\n"))
+  
+  (printf "~a.~a: Verification ~a\n" bmname cls 
+    (match verified
+      [-1 "Not Performed"]
+      [(or #t 1) "Successful"] 
+      [(or #f 0) "Failed"]
+      [else (error (format "Match failed ~a" verified))])))
 
 (define (widtho . r)
   (let* ([s (apply format r)]
@@ -99,12 +99,12 @@
   (widtho "* ACCTime           = ~a" (BMResults-acctime results)) 
   (widtho "* Mops total        = ~a" (BMResults-mops results)) 
   (widtho "* Operation type    = ~a" (BMResults-optype results)) 
-  (case (BMResults-verified results)
-    [(#t) (widtho "* Verification      = Successful")] 
-    [(#f) (widtho "* Verification      = Failed")] 
-    [(1)  (widtho "* Verification      = Successful")] 
-    [(0)  (widtho "* Verification      = Failed")] 
-    [else (widtho "* Verification      = Not Performed")])
+  (widtho "* Verification      = ~a"
+    (match (BMResults-verified results)
+      [(or #t 1) "Successful"] 
+      [(or #f 0) "Failed"] 
+      [-1 "Not Performed"]
+      [else (error (format "Match failed ~a" (BMResults-verified results)))]))
   (unless (BMResults-serial results) 
     (widtho "* Threads requested = ~a" (BMResults-numthreads results)))
   (widtho "*")

@@ -254,9 +254,7 @@
       (let* ([verified (verify CLASS rsdnm errnm (compute-surface-integral u nx ny nz isiz1 isiz2 isiz3 isize1 jsize1 ksize1 c2 dxi deta dzeta) dt
 )])
 
-        (if verified 
-            (printf "~a.~a: Verification Successful~n" bmname CLASS) 
-            (printf "~a.~a: Verification Failed~n" bmname CLASS))
+        (print-verification-status CLASS verified bmname)
         (let* ([time (/ (read-timer 1) 1000)]
                [results (new-BMResults bmname CLASS nx ny nz niter time 
                                        (get-mflops time niter nx ny nz)
@@ -322,7 +320,7 @@
                                      [n5 (in-range 0 21 5)])
                   (let ([nmjk4 (+ (* n isize4) mjk4)])
                     (f! tmat (+ m n5) (fr d nmjk4))
-                    (printf "~a ~a ~a ~a ~a ~a\n" (CGid cg) k j i m n) (flush-output)
+;                    (printf "~a ~a ~a ~a ~a ~a\n" (CGid cg) k j i m n) (flush-output)
                     (+ T
                        (* (fr ldz nmjk4) (fr v (+ n ijk-)))
                        (* (fr ldy nmjk4) (fr v (+ n ij-k)))
@@ -1248,11 +1246,12 @@
       (CGpipeline cg
         (blts cg tmat rsd tv a b c d nx ny nz k omega isize1 jsize1 ksize1 isize4 jsize4 ksize4))
       ;(CG-n0-only cg (void))
-      #;(CG-n0-only cg (pflv rsd "RSD")))
+      ;(CG-n0-only cg (pflv rsd "RSD"))
+)
 
 
-    (CG-n0-only cg (pflv rsd "RSD"))
-    (exit 0)
+;    (CG-n0-only cg (pflv rsd "RSD"))
+;    (exit 0)
     (CG-B cg)
 
 
@@ -1274,7 +1273,6 @@
         (buts cg tmat rsd tv c b a d nx ny nz k omega isize1 jsize1 ksize1 isize4 jsize4 ksize4))
       )
 
-    (exit 0)
     (CG-n0-only cg
     (let ([tmp (/ 1.0 (* omega (- 2.0 omega)))]) 
       (for* ([k (kstR nz)]

@@ -68,14 +68,11 @@
     [else (error "Unknown class")]))
 
 (define (main . argv) 
-  (let ([args (parse-cmd-line-args argv "Fourier Transform")]) 
-    (run-benchmark args)))
-
-(define (run-benchmark args) 
-  (let ([bmname "FT"]
-        [CLASS (BMArgs-class args)]
-        [num-threads (BMArgs-num-threads args)]
-        [serial (BMArgs-serial args)])
+  (let* ([args (parse-cmd-line-args argv "Fourier Transform")]
+         [bmname "FT"]
+         [CLASS (BMArgs-class args)]
+         [num-threads (BMArgs-num-threads args)]
+         [serial (BMArgs-serial args)])
 
   (let-values ([(nx ny nz niter-default) (get-class-size CLASS)])
     (let ([maxdim (max nx (max ny nz))]
@@ -95,10 +92,8 @@
 
   (timer 14
     (let ([verified (verify bmname CLASS niter-default checksum)])
-      (if verified 
-          (printf "Verification succeeded~n") 
-          (printf "Verification failed~n"))
-      (timer-stop 1) 
+      (timer-stop 1)
+      (print-verification-status CLASS verified bmname)
       (let* ([time (/ (read-timer 1) 1000)]
              [results (new-BMResults bmname CLASS nx ny nz niter-default time 
                                      (get-mflops time nx ny nz) 
@@ -224,7 +219,7 @@
       (comp-exp nz exp3))
     (fft-xyz cg 1.0 xtr scr plane exp2 exp1 exp3 ny nx nz logy logx logz isize3 jsize3 ksize3 isize1 jsize11 jsize12 serial np))
 
-    (timer-start 1) 
+  (timer-start 1) 
     (timer 12
       (CG-n0-only cg
         (initial-conditions xtr ny nx nz maxdim))
@@ -446,28 +441,20 @@
             512.9905029333  512.3435588985;IMAG 19
             512.9714421109  512.3465164008;IMAG 20
           )])])
-  (let* ([epsilon 1.0E-12]
-        [verified 
-    (if (<= niter-default 0) 
-        -1
-        (for/fold ([verified #t]) ([it (in-range niter-default)]) 
-          (let* ([rit2 (+ REAL (* it 2))]
-                 [iit2 (+ IMAG (* it 2))]
-                 [csumr (/ (- (vector-ref cksum rit2) (vector-ref cexpd rit2)) (vector-ref cexpd rit2))] 
-                 [csumi (/ (- (vector-ref cksum iit2) (vector-ref cexpd iit2)) (vector-ref cexpd iit2))])
-            (if (or (<= (abs csumr) epsilon)
-                    (<= (abs csumi) epsilon)) 
-                (and verified #t)
-                (begin 
-                  (printf "Verification failure: ~n") 
-                  (printf "epsilon: ~a~n" epsilon)
-                  (printf "csumr: ~a~n" csumr) 
-                  (printf "csumi: ~a~n" csumi)
-                  (and verified #f))))))])
-    (print-verification-status CLASS 
-      (case verified
-        [(-1) -1]
-        [(#t)  1]
-        [(#f)  0])
-       bmname)
-    verified)))
+  (define epsilon 1.0E-12)
+  (if (niter-default . <= . 0) 
+    -1
+    (for/fold ([verified #t]) ([it (in-range niter-default)]) 
+      (let* ([rit2 (+ REAL (* it 2))]
+             [iit2 (+ IMAG (* it 2))]
+             [csumr (/ (- (vector-ref cksum rit2) (vector-ref cexpd rit2)) (vector-ref cexpd rit2))] 
+             [csumi (/ (- (vector-ref cksum iit2) (vector-ref cexpd iit2)) (vector-ref cexpd iit2))])
+        (if (or (<= (abs csumr) epsilon)
+                (<= (abs csumi) epsilon)) 
+            (and verified #t)
+            (begin 
+              (printf "Verification failure: ~n") 
+              (printf "epsilon: ~a~n" epsilon)
+              (printf "csumr: ~a~n" csumr) 
+              (printf "csumi: ~a~n" csumi)
+              (and verified #f))))))))

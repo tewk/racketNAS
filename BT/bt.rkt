@@ -407,9 +407,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
 
       (let* ([verified (verify CLASS niter dt compute_rhs_thunk
         nx2 ny2 nz2 isize2 jsize2 ksize2 u rhs dnzm1 dnym1 dnxm1)])
-        (if verified 
-            (printf "BT.~a: Verification Successful~n" CLASS) 
-            (printf "Verification Failed~n"))
+        (print-verification-status CLASS verified bmname)
         (let* ([time (/ (read-timer 1) 1000)]
                [results (new-BMResults bmname CLASS nx ny nz niter time 
                                        (get-mflops time niter nx ny nz) 
@@ -418,8 +416,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                                        serial 
                                        num-threads 
                                        -1)]) 
-            (print-results results) 
-            (when #f (print-timers))))))))
+            (print-results results)))))))
 
 (define (bt-body cg  u us vs ws rho_i square qs rhs forcing lhs_ fjac_ njac_
       nx ny nz 
@@ -1113,33 +1110,28 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
         (f! xcedif m (abs (/ (- (fr xce m) xcer) xcer)))))
 
   (define  epsilon 1.0E-8)
-  (if (not (equal? class #\U))
-    (begin
-      (printf "Verification being performed for class ~a\n" class)
-      (printf "Accuracy setting for epsilon = ~a\n" epsilon)
-      (if ((abs (- dt dtref)) . <= . epsilon)
-        #t
-        (begin
-          (printf "DT does not match the reference value of ~a\n" dtref)
-          #f))
-      (printf "Comparison of RMS-norms of residual\n"))
-    (begin
-      (printf " Unknown CLASS")
-      (printf " RMS-norms of residual")
-    ))
-;  (printf " RMS-norms of solution error\n")
-  (for ([m (in-range (flvector-length xcr))])
-    (printf "~a. ~a ~a ~a\n" m (fr xcr m) (fr xcrref m) (fr xcrdif m)))
-  (printf "Comparison of RMS-norms of solution error\n")
-  (for ([m (in-range (flvector-length xce))])
-    (printf "~a. ~a ~a ~a\n" m (fr xce m) (fr xceref m) (fr xcedif m)))
-)
+  (begin0
+    (if (not (equal? class #\U))
+      (let ([verified ((abs (- dt dtref)) . <= . epsilon)])
+        (printf "Verification being performed for class ~a\n" class)
+        (printf "Accuracy setting for epsilon = ~a\n" epsilon)
+        (unless verified (printf "DT does not match the reference value of ~a\n" dtref))
+        verified)
+      (begin
+        (printf " Unknown CLASS")
+        (printf " RMS-norms of residual")
+        -1))
+    (printf "Comparison of RMS-norms of residual\n")
+    (for ([m (in-range (flvector-length xcr))])
+      (printf "~a. ~a ~a ~a\n" m (fr xcr m) (fr xcrref m) (fr xcrdif m)))
+    (printf "Comparison of RMS-norms of solution error\n")
+    (for ([m (in-range (flvector-length xce))])
+      (printf "~a. ~a ~a ~a\n" m (fr xce m) (fr xceref m) (fr xcedif m)))))
 
 (define-syntax-rule (define-syntax-case (N a ...) b ...)
   (define-syntax (N stx)
     (syntax-case stx ()
       [(N a ...) b ...])))
-
 
 (define-syntax-case (__solve NAME R i j k kk jj ii nkk2 njj2 nii2)
 
@@ -1418,6 +1410,3 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
         (printf "Error reading from file mg.input\n")
         (exit 0)])
     (printf "No input file mg.input, Using compiled defaults\n")))
-
-(define (print-timers) 0)
-

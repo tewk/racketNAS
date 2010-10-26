@@ -1,51 +1,34 @@
 #lang racket 
 
-;; racket -tm integer-sort.rkt SERIAL CLASS=S
-;; racket -tm integer-sort.rkt FUTURES CLASS=S NP=2
-;; racket -tm integer-sort.rkt PLACES  CLASS=S NP=2
+;; racket -tm integer-sort.rkt CLASS=S SERIAL
+;; racket -tm integer-sort.rkt CLASS=S NP=2
+;; racket -tm integer-sort.rkt CLASS=S NP=2
 
 (require racket/future)
 (require racket/vector)
 (require "../bm-args.rkt")
 (require "../bm-results.rkt")
 (require "../rand-generator.rkt")
+(require "../timer.rkt")
 (require "places-mpi.rkt")
 
 (provide main
          sort-start-worker)
 
 ;; safe primitives
-#;
-(require (rename-in scheme [vector-ref vr] [vector-set! vs!])
-         scheme/fixnum)
+;;#;
+(require (rename-in racket [vector-ref vr] [vector-set! vs!])
+         racket/fixnum)
 
 ;; unsafe ones
-;;#;
-(require (rename-in scheme/unsafe/ops
-                    [unsafe-vector-ref vr] [unsafe-vector-set! vs!]
+#;
+(require (rename-in racket/unsafe/ops
+                    [unsafe-vector-ref vr] 
+                    [unsafe-vector-set! vs!]
                     [unsafe-fx+ fx+]
                     [unsafe-fx- fx-]
                     [unsafe-fx= fx=]
                     [unsafe-fx<= fx<=]))
-
-(define max-iterations 10)
-(define test-array-size 5)
-
-(define max-key 0)
-(define num-buckets 0)
-(define num-keys 0)
-
-(define test-index-array #())
-(define test-rank-array #())
-
-(define passed-verification 0)
-
-;These are the three main arrays
-(define master-hist #())
-(define key-array #())
-(define partial-verify-vals #())
-
-(define num-threads 0)
 
 (define (initial-conditions cls)
   (define S-test-index-array #(48427 17148 23627 62548 4431))
@@ -63,23 +46,10 @@
     [(#\W) (values W-test-index-array W-test-rank-array 20 16 10)]
     [(#\A) (values A-test-index-array A-test-rank-array 23 19 10)]
     [(#\B) (values B-test-index-array B-test-rank-array 25 21 10)]
-    [(#\C) (values C-test-index-array C-test-rank-array 27 23 10)]))
+    [(#\C) (values C-test-index-array C-test-rank-array 27 23 10)]
+    [else (error (format "Unknown class ~a" cls))]))
 
 (define-struct IS-Params (serial num-threads max-key num-buckets num-keys))
-;; init-is: character boolean -> void
-(define (init-is cls np)
-  (set! num-threads np)
-  (define-values (tia tra total-keys-log-2 max-key-log-2 num-buckets-log-2)
-    (initial-conditions cls))
-  ;Common variables 
-  (set! test-index-array tia)
-  (set! test-rank-array tra)
-  (set! num-keys (arithmetic-shift 1 total-keys-log-2))
-  (set! max-key (arithmetic-shift 1 max-key-log-2))
-  (set! num-buckets (arithmetic-shift 1 num-buckets-log-2))
-  (set! key-array (make-vector num-keys 0))
-  (set! master-hist (make-vector max-key 0))
-  (set! partial-verify-vals (make-vector test-array-size 0)))
 
 (define-struct RankThread (id 
                            local-hist 
@@ -90,20 +60,20 @@
   #:mutable 
   #:transparent)
 
-(define (new-RankThread id s1 e1 s2 e2) 
-  (make-RankThread id 
-                   (make-vector max-key 0) 
-                   s1 
-                   e1 
-                   s2 
-                   e2))     
-
 
 (define rankthreads #())
 (define rankthreads-local-hist #())
 (define local-hist (make-vector 0))
 
-(define (setup-threads) 
+(define (setup-threads num-threads max-key num-keys) 
+  (define (new-RankThread id s1 e1 s2 e2) 
+    (make-RankThread id 
+                     (make-vector max-key 0) 
+                     s1 
+                     e1 
+                     s2 
+                     e2))     
+
   (set! rankthreads (make-vector num-threads 0))
   (let ([chunk-size (quotient num-keys num-threads)]
         [rsize (quotient max-key num-threads)])
@@ -140,19 +110,24 @@
 ;IS code   
 (define bid -1)
 
-
 ; The benchmark entry point.
 ;;main : list-of-string -> void
-(define (main . cmdlineargs ) 
-  (let ([arg1 (car cmdlineargs)]
-        [args (parse-cmd-line-args (cdr cmdlineargs)  "Integer Sort")])
-    (init-is (BMArgs-class args) 
-             (BMArgs-num-threads args)) 
-    (run-benchmark arg1
-                   (BMArgs-class args) 
-                   args)))
+(define (main . argv) 
+  (let* ([args (parse-cmd-line-args argv "Integer Sort")]
+         [class (BMArgs-class args)]
+         [serial (BMArgs-serial args)]
+         [num-threads (BMArgs-num-threads args)]) 
+    (define-values (test-index-array test-rank-array total-keys-log-2 max-key-log-2 num-buckets-log-2)
+      (initial-conditions class))
+    (let* ([num-keys (arithmetic-shift 1 total-keys-log-2)]
+           [max-key (arithmetic-shift 1 max-key-log-2)]
+           [num-buckets (arithmetic-shift 1 num-buckets-log-2)]
+           [test-array-size 5]
+           [max-iterations 10]
+           [key-array (make-vector num-keys 0)]
+           [master-hist (make-vector max-key 0)]
+           [partial-verify-vals (make-vector test-array-size 0)])
 
-(define (run-benchmark run-type class args) 
   (define amult 1220703125.0)
   (define (init-keys a) 
     (define k (/ max-key 4)) 
@@ -178,19 +153,11 @@
   ;initialization of all data and code pages and respective tables 
   ;(print (vector-take key-array 1000))
 
-  (printf "~v~n" (string->symbol run-type))
-  (define sorter (case (string->symbol run-type)
-    [(SERIAL) (lambda (key-array num-keys master-hist max-key)
+  (define sorter (match serial
+    [#t (lambda (key-array num-keys master-hist max-key)
       (serial-sort key-array num-keys master-hist max-key)
       master-hist)]
-    [(FUTURES) 
-      (let ()
-        (setup-threads)
-        (let ([local-hists (for/vector ([i (in-range num-threads)]) (make-vector max-key 0))])
-          (lambda (key-array num-keys master-hist max-key)
-            (future-sort local-hists)
-            master-hist)))]
-    [(PLACES) 
+    [#f
       (let ()
         (define places (for/list ([i (in-range 1 num-threads)]) (place "integer-sort.rkt" 'sort-start-worker)))
         (define comgrp (build-hypercube-comgrp num-threads places))
@@ -199,39 +166,41 @@
         (lambda (key-array num-keys master-hist max-key)
           (set! master-hist (places-sort comgrp key-array max-key))
           master-hist))]
+    ["FUTURES"
+      (let ()
+        (setup-threads num-threads max-key)
+        (let ([local-hists (for/vector ([i (in-range num-threads)]) (make-vector max-key 0))])
+          (lambda (key-array num-keys master-hist max-key)
+            (future-for (lambda (x) (step1 x key-array master-hist max-key (vr local-hists x) num-keys num-threads)) num-threads)
+            (future-for (lambda (x) (step2 x master-hist max-key local-hists num-keys num-threads)) num-threads)
+            master-hist)))]
     [else
       (raise "OOPS")]))
 
   (prep-iteration 1)
   (sorter key-array num-keys master-hist max-key)
-  (partial-verify class 1 master-hist) 
+  (partial-verify class 1 master-hist partial-verify-vals test-rank-array num-keys) 
 
-  ;Start verification counter 
-  (set! passed-verification 0) 
-  (if (not (eq? #\S class))
-      (printf "~n    iteration#~n")
-      void) 
-  ;Start timing 
+  (when (not (eq? #\S class)) (printf "~n    iteration#~n"))
+
+  (timer-start 1)
+
   ;This is the main iteration 
-  (let-values ([(r cpu-ms real-ms gc-ms) 
-                (time-apply 
-                 (λ (x)
-                   (for/fold ([master-history master-hist]) ([it (in-range 1 (+ max-iterations 1))]) 
-                     (printf "    Iteration ~a\n" it)
-                     (prep-iteration it)
-                     (let ([master-hist (sorter key-array num-keys master-hist max-key)])
-                       (partial-verify class it master-hist)
-                       master-hist)))
-                  '(1))])
-    ;Stop timing 
+  (let ([master-hist (for/fold ([master-hist master-hist]) ([it (in-range 1 (+ max-iterations 1))]) 
+      (printf "    Iteration ~a\n" it)
+      (prep-iteration it)
+      (let ([master-hist (sorter key-array num-keys master-hist max-key)])
+         (partial-verify class it master-hist partial-verify-vals test-rank-array num-keys)
+         master-hist))])
+
+    (timer-stop 1)
+
     ;This tests that keys are in sequence: sorting of last 
     ;ranked key seq occurs here, but is an untimed operation 
-    (full-verify (car r))
-
-    (let ([verified (if (= passed-verification (+ (* 5 max-iterations) 1)) 1 0)])
+    (let ([verified (full-verify master-hist key-array max-key num-keys)])
       (print-verification-status class verified "Integer Sort")
-      (let* ([tm-sec (/ real-ms 1000)]
-             [results (make-BMResults "Integer Sort" 
+      (let* ([tm-sec (/ (read-timer 1) 1000)]
+             [results (make-BMResults "IS" 
                                       "Machine Name?" 
                                       "PLT Racket" 
                                       class
@@ -242,18 +211,16 @@
                                       (exact->inexact tm-sec)
                                       0 
                                       0
-                                      (get-mops tm-sec 
-                                                max-iterations 
-                                                num-keys) 
+                                      (get-mops tm-sec max-iterations num-keys) 
                                       0 
                                       0 
                                       0 
                                       "keys ranked" 
-                                      (BMArgs-num-threads args) 
-                                      (BMArgs-serial args) 
+                                      num-threads
+                                      serial
                                       0 
                                       verified)])                             
-        (print-results results)))))   
+        (print-results results)))))))
 
 
 (define (get-mops total-time niter num-keys)  
@@ -280,9 +247,9 @@
       sum))
 
 ;; partial-verify : int -> void
-;; deps test-array-size partial-verify-vals num-keys master-hist test-rank-array
-(define (partial-verify class iteration master-hist) 
-  (for ([i (in-range 0 test-array-size)]) 
+;; deps num-keys 
+(define (partial-verify class iteration master-hist partial-verify-vals test-rank-array num-keys) 
+  (for ([i (in-range (vector-length partial-verify-vals))]) 
     (let ([k (vr partial-verify-vals i)])
       (if (and (<= 0 k) (<= k (- num-keys 1))) 
           (let ([offset
@@ -306,16 +273,15 @@
               [(#\C) 
                (if (<= i 2) 
                    iteration
-                   (- 0 iteration))])])
+                   (- 0 iteration))]
+              [else (error "Unknown class")])])
             (let ([mh (vr master-hist (- k 1))]
                   [th (+ (vr test-rank-array i) offset)])
-              (if (not (= mh th))
-                (begin 
-                  (printf "Failed partial verification: iteration ~a, test key ~a ~a ~a~n" iteration i mh th))
-                (set! passed-verification (+ passed-verification 1)))))
-          void))))
+              (when (not (= mh th))
+                (error (format(printf "Failed partial verification: iteration ~a, test key ~a ~a ~a~n" iteration i mh th))))))
+          #t))))
 
-(define (full-verify master-hist) 
+(define (full-verify master-hist key-array max-key num-keys) 
   (let ([key 0] 
         [idx 0]) 
     (for ([i (in-range 0 num-keys)]) 
@@ -327,7 +293,7 @@
                       (>= idx num-keys))
               (k (void))))))
       (vs! key-array idx key)
-      (set! idx (+ idx 1)))
+      (set! idx (+ idx 1))))
     
     (let-values ([(prev count)
         (for/fold ([prev (vr key-array 0)]
@@ -339,8 +305,10 @@
                         (fx+ count 1)
                         count))))])
       (if (= count 0)
-          (set! passed-verification (+ passed-verification 1))
-          (printf "Full_verify: number of keys out of sort: ~s\n" count)))))
+          #t
+          (begin 
+            (printf "Full_verify: number of keys out of sort: ~s\n" count)
+            #f))))
 
 ;; full-verify : -> void 
 #;(define (full-verify) 
@@ -403,11 +371,7 @@
     (for ([x fs])
       (touch x))))
   
-(define (future-sort local-hists) 
-  (future-for (lambda (x) (step1 x key-array master-hist max-key (vr local-hists x) num-keys num-threads)) num-threads)
-  (future-for (lambda (x) (step2 x master-hist max-key local-hists num-keys num-threads)) num-threads))
-
-(define (future-sort2 a) 
+(define (future-sort2 a key-array num-threads master-hist max-key) 
    ;; deps max-key local-hist start end key-array
   (define (step1 rt)
     (let ([local-hist (RankThread-local-hist rt)]
@@ -476,17 +440,14 @@
 (define (sort-start-worker2 ch)
   (define comgrp (receive-hypercube-comgrp ch))
   (match (broadcast comgrp)
-    [(list master-hist max-key key-array num-key local-hists num-threads its)
+    [(list master-hist max-key key-array num-keys local-hists num-threads its)
       (for ([i (in-range its)])
-        (sort-worker2 comgrp master-hist max-key key-array num-key local-hists num-threads))]))
+        (sort-worker2 comgrp master-hist max-key key-array num-keys local-hists num-threads))]))
 
-(define (sort-worker2 comgrp master-hist max-key key-array num-key local-hists num-threads)
+(define (sort-worker2 comgrp master-hist max-key key-array num-keys local-hists num-threads)
     (let* ([id (comgrp-id comgrp)]
            [local-hist (vr local-hists id)])
 ;          (barrier compgrp)
         (step1 id key-array master-hist max-key local-hists num-keys num-threads)
 ;          (barrier compgrp)
         (step2 id master-hist max-key local-hists num-keys num-threads)))
-
-
-;(main (current-command-line-arguments))

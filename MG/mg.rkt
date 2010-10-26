@@ -145,9 +145,7 @@
       (printf " Initialization time: ~a seconds\n" 0)
       (let* ([verified (verify CLASS 
               (norm2u3 r n1 n2 n3 void (vr nx lt1) (vr ny lt1) (vr nz lt1)))])
-        (if verified 
-            (printf "MG.~a: Verification Successful~n" CLASS) 
-            (printf "MG.~a: Verification Failed~n" CLASS))
+        (print-verification-status CLASS verified bmname)
         (let* ([time (/ (read-timer 1) 1000)]
                [results (new-BMResults bmname CLASS (vr nx lt1) (vr ny lt1) (vr nz lt1)  nit time 
                                        (get-mflops time nit n1 n2 n3)

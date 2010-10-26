@@ -111,9 +111,7 @@
         (let ([verified (verify zeta zeta-verify-value)])
           (print-banner "Conjugate Gradient" args) 
           (printf "Size = ~a niter = ~a~n" na niter) 
-          (if verified 
-              (printf "Verification succeeded~n") 
-              (printf "Verification failed~n"))
+          (print-verification-status CLASS verified bmname)
           (let* ([time (/ (read-timer 1) 1000)]
                  [results (new-BMResults bmname CLASS na 0 0  niter time 
                                          (get-mflops na nonzer time niter)
