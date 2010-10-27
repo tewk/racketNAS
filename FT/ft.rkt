@@ -96,7 +96,7 @@
       (print-verification-status CLASS verified bmname)
       (let* ([time (/ (read-timer 1) 1000)]
              [results (new-BMResults bmname CLASS nx ny nz niter-default time 
-                                     (get-mflops time nx ny nz) 
+                                     (get-mflops time niter-default nx ny nz) 
                                      "floating point" 
                                      verified 
                                      serial 
@@ -306,7 +306,16 @@
                 (fx+ (fx* j 2) xoffset)))
   )))))))
 
-(define (get-mflops total-time nx ny nz) 0)
+(define (get-mflops total-time niter nx ny nz)
+  (if (not (= total-time 0.0))
+    (let* ([ntotal (* nx ny nz)] 
+           [lntotal (log ntotal)])
+      (/ (* (+ 14.8157 
+               (* 7.19641 lntotal)
+               (* niter (+ 5.23518 (* 7.21113 lntotal))))
+            ntotal)
+            (* total-time 1000000.0)))
+      0.0))
 
 (define (initial-conditions u0 d1 d2 d3 maxdim) 
   (let* ([tmp (make-flvector (* 2 maxdim) 0.0)] 
