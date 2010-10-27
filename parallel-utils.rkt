@@ -10,7 +10,7 @@
                                     [unsafe-fx< fx<]
                                     [unsafe-fxabs fxabs]))
 
-(provide CGspawn CG-n0-only CG-B CGfor CGid CGnp CGSingle CGSerial p-range CGpipeline)
+(provide CGspawn CG-n0-only CG-B CGfor CGid CGnp CGSingle CGSerial p-range CGpipeline CG-Parallel-Only)
 
 (define-syntax-rule (!or= x b ...)
   (not (ormap (lambda (y) (fx= x y)) (list b ...))))
@@ -115,3 +115,8 @@
       (place-channel-recv ch)
       body ...
        (place-channel-send ch 1)]))
+
+(define-syntax-rule (CG-Parallel-Only cg body ...)
+  (match cg
+    [(CG _ 0 _) (void)]
+    [else body ...])) 
