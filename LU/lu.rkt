@@ -1389,9 +1389,6 @@
 
   (define xcidif (abs (/ (- xci xciref) xciref)))
   (define epsilon 1.0E-8)
-  
-  (let ([verified ((abs (- dt dtref)) . <= . epsilon)])
-;  (printf "KBT ~a ~a ~a dt dtref epsilon\n" dt dtref epsilon)
 
   (if (not (equal? class #\U))
     (begin
@@ -1422,7 +1419,10 @@
 
   (printf "~a ~a ~a\n" xci xciref xcidif)
   
-  verified))
+  (and ((abs (- dt dtref)) . <= . epsilon)
+       (<epsilon-vmap xcrdif epsilon)
+       (<epsilon-vmap xcedif epsilon)
+       (xcidif . < . epsilon)))
 
 #|
  vim set makeprg=/home/tewk/Tools/bin/rktl\ \-tm\ %\ SERIAL\ CLASS=S

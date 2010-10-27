@@ -1,12 +1,14 @@
 #lang racket/base
 (require (for-syntax racket/base))
+(require (only-in racket/flonum flvector-length [flvector-ref fr] [flvector-set! f!]))
 (provide define-syntax-case
          PICK2M
          PICK3M
          with-syntax-values
          REPDET*
          PICK2
-         PICK3)
+         PICK3
+         <epsilon-vmap)
 
 (define-syntax-rule (define-syntax-case (N a ...) b ...)
   (define-syntax (N stx)
@@ -42,3 +44,10 @@
   (case (syntax->datum #'R2) [(1) #'V1] [(2) #'V2] [(3) #'V3]
   [else (raise (format "~a" (syntax->datum #'R2)))]))
 
+(define-syntax-rule (<epsilon-vmap v epsilon)
+  (let ([vmax (flvector-length v)])
+    (let loop ([t #t]
+               [i 0])
+      (if (and t (i . < . vmax))
+        (loop (and t ((fr v i) . < . epsilon)) (add1 i))
+        t))))

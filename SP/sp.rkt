@@ -8,6 +8,7 @@
 (require "../timer.rkt")
 (require "../parallel-utils.rkt")
 (require "../debug.rkt")
+(require "../macros.rkt")
 (require racket/match)
 (require racket/math)
 (require (for-syntax scheme/base))
@@ -1122,7 +1123,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
   (define epsilon 1.0E-8)
   (begin0
     (if (not (equal? class #\U))
-      (let ([verified ((abs (- dt dtref)) . <= . epsilon)])
+      (let ([verified (and ((abs (- dt dtref)) . <= . epsilon)
+                           (<epsilon-vmap xcrdif epsilon)
+                           (<epsilon-vmap xcedif epsilon))])
         (printf " Verification being performed for class ~a\n" class)
         (printf " Accuracy setting for epsilon = ~a\n" epsilon)
         (unless verified

@@ -8,6 +8,7 @@
 (require "../timer.rkt")
 (require "../parallel-utils.rkt")
 (require "../debug.rkt")
+(require "../macros.rkt")
 (require racket/match)
 (require racket/math)
 (require (for-syntax scheme/base))
@@ -1112,7 +1113,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
   (define  epsilon 1.0E-8)
   (begin0
     (if (not (equal? class #\U))
-      (let ([verified ((abs (- dt dtref)) . <= . epsilon)])
+      (let ([verified (and ((abs (- dt dtref)) . <= . epsilon)
+                           (<epsilon-vmap xcrdif epsilon)
+                           (<epsilon-vmap xcedif epsilon))])
         (printf "Verification being performed for class ~a\n" class)
         (printf "Accuracy setting for epsilon = ~a\n" epsilon)
         (unless verified (printf "DT does not match the reference value of ~a\n" dtref))
@@ -1127,11 +1130,6 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
     (printf "Comparison of RMS-norms of solution error\n")
     (for ([m (in-range (flvector-length xce))])
       (printf "~a. ~a ~a ~a\n" m (fr xce m) (fr xceref m) (fr xcedif m)))))
-
-(define-syntax-rule (define-syntax-case (N a ...) b ...)
-  (define-syntax (N stx)
-    (syntax-case stx ()
-      [(N a ...) b ...])))
 
 (define-syntax-case (__solve NAME R i j k kk jj ii nkk2 njj2 nii2)
 
