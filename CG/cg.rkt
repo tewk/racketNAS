@@ -28,8 +28,6 @@
                     [unsafe-vector-set! vs!]
                     [unsafe-flvector-ref flvr] 
                     [unsafe-flvector-set! flvs!]
-#|
-|#
                     [unsafe-fl+ fl+]
                     [unsafe-fl- fl-]
                     [unsafe-fl* fl*]
