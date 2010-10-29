@@ -7,6 +7,7 @@
 (require "../rand-generator.rkt")
 (require "../timer.rkt")
 (require "../parallel-utils.rkt")
+(require "../macros.rkt")
 (require "../debug.rkt")
 (require racket/match)
 (require racket/math)
@@ -43,17 +44,16 @@
                     [unsafe-vector-set! vs!]
                     [unsafe-flvector-ref flvr] 
                     [unsafe-flvector-set! flvs!]
-                    [unsafe-fl+ fl+]
-                    [unsafe-fl- fl-]
-                    [unsafe-fl* fl*]
+                    [unsafe-fl+ fl+op]
+                    [unsafe-fl- fl-op]
+                    [unsafe-fl* fl*op]
                     [unsafe-fl/ fl/]
-                    [unsafe-fx+ fx+]
+                    [unsafe-fx+ fx+op]
                     [unsafe-fx- fx-]
-                    [unsafe-fx* fx*]
+                    [unsafe-fx* fx*op]
+                    [unsafe-fx= fx=]
 ))
 
-(define-syntax-rule (fx-- a) (fx- a 1))
-(define-syntax-rule (fx++ a) (fx+ a 1))
 (define-syntax (*it stx)
   (syntax-case stx ()
     [(_ id)
@@ -160,15 +160,22 @@
 ;;;//--------------------------------------------------------------------
 ;;;//    One iteration for startup
 ;;;//--------------------------------------------------------------------
+  (define u1 (make-flvector (fx++ nm) 0.0))
+  (define u2 (make-flvector (fx++ nm) 0.0))
+  (define m 535)
+  (define z1 (make-flvector m 0.0))
+  (define z2 (make-flvector m 0.0))
+  (define z3 (make-flvector m 0.0))
+
 
   (CG-n0-only cg
     (zero3 u 0 n1 n2 n3)
     (zran3 cg v n1 n2 n3 (vr nx (fx-- lt)) (vr ny (fx-- lt)) is1 is2 is3 ie1 ie2 ie3))
 
-  (resid cg a u v r 0 n1 n2 n3 nm)
+  (resid cg a u v r 0 n1 n2 n3 nm u1 u2)
 
-  (mg3P cg c a u v r n1 n2 n3 ir m1 m2 m3 nm lt)
-  (resid cg a u v r 0 n1 n2 n3 nm)
+  (mg3P cg c a u v r n1 n2 n3 ir m1 m2 m3 nm lt u1 u2 z1 z2 z3)
+  (resid cg a u v r 0 n1 n2 n3 nm u1 u2)
 
 ;;;//--------------------------------------------------------------------
 ;;;//    Main Loop
@@ -179,11 +186,11 @@
     (zran3 cg v n1 n2 n3 (vr nx (fx-- lt)) (vr ny (fx-- lt)) is1 is2 is3 ie1 ie2 ie3)
     (timer-start 1))
 
-  (resid cg a u v r 0 n1 n2 n3 nm)
+  (resid cg a u v r 0 n1 n2 n3 nm u1 u2)
 
   (for ([it (in-range 1 (fx++ nit))])
-    (mg3P cg c a u v r n1 n2 n3 ir m1 m2 m3 nm lt)
-    (resid cg a u v r 0 n1 n2 n3 nm))
+    (mg3P cg c a u v r n1 n2 n3 ir m1 m2 m3 nm lt u1 u2 z1 z2 z3)
+    (resid cg a u v r 0 n1 n2 n3 nm u1 u2))
 
   (CG-n0-only cg
     (timer-stop 1)))
@@ -262,7 +269,7 @@
   (for* ([i3 (in-range n3)]
          [i2 (in-range n2)]
          [i1 (in-range n1)])
-    (flvs! z (+ off i1 (* n1 (+ i2 (* n2 i3)))) 0.0)))
+    (flvs! z (fx+ off i1 (fx* n1 (fx+ i2 (fx* n2 i3)))) 0.0)))
 
 (define (zran3 cg z n1 n2 n3 nx ny is1 is2 is3 ie1 ie2 ie3)
   (define mm 10)
@@ -409,15 +416,11 @@
        (fl+ (vr3 u ii1 (fx- i2 1) (fx+ i3 1) n1 n3)
             (vr3 u ii1 (fx+ i2 1) (fx+ i3 1) n1 n3))))
 
-(define (resid cg a u v r off n1 n2 n3 nm)
-  (define u1 (make-flvector (fx++ nm) 0.0))
-  (define u2 (make-flvector (fx++ nm) 0.0))
-;  (for* ([i3 (in-range 1 (fx-- n3))]
-;         [i2 (in-range 1 (fx-- n2))])
+(define (resid cg a u v r off n1 n2 n3 nm u1 u2)
   (CGfor cg ([i3 (in-range 1 (fx-- n3))])
     (for ([i2 (in-range 1 (fx-- n2))])
       (for ([i1 (in-range n1)])
-        (let ([ii1 (+ off i1)])
+        (let ([ii1 (fx+ off i1)])
           (flvs! u1 i1 (stencil1 u ii1 i2 i3 n1 n3))
           (flvs! u2 i1 (stencil2 u ii1 i2 i3 n1 n3))))
 
@@ -429,14 +432,11 @@
                      (fl* (flvr a 3) (fl+ (flvr u2 (fx-- i1)) (flvr u2 (fx++ i1)))))))))))
   (comm3 cg r off n1 n2 n3))
 
-(define (psinv cg c r u off n1 n2 n3 nm)
-  (define r1 (make-flvector (fx++ nm) 0.0))
-  (define r2 (make-flvector (fx++ nm) 0.0))
-  
+(define (psinv cg c r u off n1 n2 n3 nm r1 r2)
   (CGfor cg ([i3 (in-range 1 (fx-- n3))])
     (for ([i2 (in-range 1 (fx-- n2))])
       (for ([i1 (in-range n1)])
-        (let ([ii1 (+ off i1)])
+        (let ([ii1 (fx+ off i1)])
           (flvs! r1 i1 (stencil1 r ii1 i2 i3 n1 n2))
           (flvs! r2 i1 (stencil2 r ii1 i2 i3 n1 n2))))
       (for ([i1 (in-range 1 (fx-- n1))])
@@ -451,11 +451,11 @@
 
   (comm3 cg u off n1 n2 n3))
 
-(define (mg3P cg c a u v r n1 n2 n3 ir m1 m2 m3 nm lt)
+(define (mg3P cg c a u v r n1 n2 n3 ir m1 m2 m3 nm lt u1 u2 z1 z2 z3)
   (define lb 1)
   (for ([k (in-range (fx-- lt) (fx-- lb) -1)])
     (let ([j (fx- k 1 )])
-      (rprj3 cg r (vr ir k) (vr m1 k) (vr m2 k) (vr m3 k) (vr ir j) (vr m1 j) (vr m2 j) (vr m3 j) nm)))
+      (rprj3 cg r (vr ir k) (vr m1 k) (vr m2 k) (vr m3 k) (vr ir j) (vr m1 j) (vr m2 j) (vr m3 j) nm u1 u2)))
   (let* ([k (fx- lb 1 )]
          [irk (vr ir k)]
          [m1k (vr m1 k)]
@@ -463,7 +463,7 @@
          [m3k (vr m3 k)])
     (CG-n0-only cg
       (zero3 u irk m1k m2k m3k))
-    (psinv cg c r u irk m1k m2k m3k nm))
+    (psinv cg c r u irk m1k m2k m3k nm u1 u2))
   (for ([k (in-range lb (fx-- lt))])
     (let* ([j (fx- k 1 )]
            [irk (vr ir k)]
@@ -476,22 +476,20 @@
            [m3j (vr m3 j)])
       (CG-n0-only cg
         (zero3 u irk m1k m2k m3k))
-      (interp cg u irj m1j m2j m3j irk m1k m2k m3k)
+      (interp cg u irj m1j m2j m3j irk m1k m2k m3k z1 z2 z3)
       (CG-B cg)
-      (resid  cg a u r r irk m1k m2k m3k nm)
-      (psinv  cg c r u irk m1k m2k m3k nm)))
+      (resid  cg a u r r irk m1k m2k m3k nm u1 u2)
+      (psinv  cg c r u irk m1k m2k m3k nm u1 u2)))
   (let ([j (fx- lt 2 )])
-    (interp cg u (vr ir j) (vr m1 j) (vr m2 j) (vr m3 j) 0 n1  n2 n3)
+    (interp cg u (vr ir j) (vr m1 j) (vr m2 j) (vr m3 j) 0 n1 n2 n3 z1 z2 z3)
       (CG-B cg)
-    (resid cg a u v r 0 n1 n2 n3 nm)
-    (psinv cg c r u 0 n1 n2 n3 nm)))
+    (resid cg a u v r 0 n1 n2 n3 nm u1 u2)
+    (psinv cg c r u 0 n1 n2 n3 nm u1 u2)))
 
-(define (rprj3 cg r roff m1k m2k m3k soff m1j m2j m3j nm)
-  (define x1 (make-flvector (fx++ nm) 0.0))
-  (define y1 (make-flvector (fx++ nm) 0.0))
-  (let ([d1 (if (= m1k 3) 2 1)]
-        [d2 (if (= m2k 3) 2 1)]
-        [d3 (if (= m3k 3) 2 1)])
+(define (rprj3 cg r roff m1k m2k m3k soff m1j m2j m3j nm x1 y1)
+  (let ([d1 (if (fx= m1k 3) 2 1)]
+        [d2 (if (fx= m2k 3) 2 1)]
+        [d3 (if (fx= m3k 3) 2 1)])
     (CGfor cg ([j3 (in-range 2 m3j)])
       (let ([i3 (fx- (fx- (fx* 2 j3) d3) 1)])
         (for ([j2 (in-range 2 m2j)])
@@ -523,13 +521,8 @@
 
   (comm3 cg r soff m1j m2j m3j))
 
-(define (interp cg u zoff mm1 mm2 mm3 uoff n1 n2 n3)
+(define (interp cg u zoff mm1 mm2 mm3 uoff n1 n2 n3 z1 z2 z3)
   (define-syntax-rule (vs!+ u idx v) (flvs! u idx (fl+ (flvr u idx) v)))
-  (define m 535)
-  (define z1 (make-flvector m 0.0))
-  (define z2 (make-flvector m 0.0))
-  (define z3 (make-flvector m 0.0))
-
   (if (and (not (= n1 3))
            (not (= n2 3))
            (not (= n3 3)))
@@ -559,7 +552,7 @@
                  [uz1 (vr3 u jj        si2 si3 mm1 mm2)]
                  [uz2 (vr3 u (fx++ jj) si2 si3 mm1 mm2)])
             (vs!+ u (vidx3 ii        xi2 xi3 n1 n2) uz1)
-            (vs!+ u (vidx3 (fx++ ii) xi2 xi3 n1 n2) (* 0.5 (+ uz2 uz1)))))
+            (vs!+ u (vidx3 (fx++ ii) xi2 xi3 n1 n2) (fl* 0.5 (+ uz2 uz1)))))
         (for ([i1 (in-range 1 mm1)])
           (let* ([xi1 (fx- (fx* 2 i1) 2)]
                  [xi2 (fx- (fx* 2 i2) 1)]
