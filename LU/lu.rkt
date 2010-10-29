@@ -1179,8 +1179,10 @@
         dx3tx1 dy3ty1 dz3tz1
         dx4tx1 dy4ty1 dz4tz1
         dx5tx1 dy5ty1 dz5tz1)
-      (CGpipeline cg
-        (blts cg tmat rsd tv a b c d nx ny nz k omega isize1 jsize1 ksize1 isize4 jsize4 ksize4))
+;      (CGpipeline cg
+;        (blts cg tmat rsd tv a b c d nx ny nz k omega isize1 jsize1 ksize1 isize4 jsize4 ksize4))
+      (CG-n0-only cg
+        (blts (CGSingle) tmat rsd tv a b c d nx ny nz k omega isize1 jsize1 ksize1 isize4 jsize4 ksize4))
       ;(CG-n0-only cg (void))
       ;(CG-n0-only cg (pflv rsd "RSD"))
 )
@@ -1205,8 +1207,10 @@
         dx3tx1 dy3ty1 dz3tz1
         dx4tx1 dy4ty1 dz4tz1
         dx5tx1 dy5ty1 dz5tz1)
-      (CGpipeline cg
-        (buts cg tmat rsd tv c b a d nx ny nz k omega isize1 jsize1 ksize1 isize4 jsize4 ksize4))
+;      (CGpipeline cg
+;        (buts cg tmat rsd tv c b a d nx ny nz k omega isize1 jsize1 ksize1 isize4 jsize4 ksize4))
+      (CG-n0-only cg
+        (buts (CGSingle) tmat rsd tv c b a d nx ny nz k omega isize1 jsize1 ksize1 isize4 jsize4 ksize4))
       )
 
     (CG-n0-only cg
