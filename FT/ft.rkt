@@ -6,6 +6,7 @@
 (require "../bm-results.rkt") 
 (require "../rand-generator.rkt")
 (require "../timer.rkt")
+;(require "../macros.rkt")
 (require "../parallel-utils.rkt")
 (require racket/future)
 (require racket/list)
@@ -197,10 +198,10 @@
         [jsize11 (fx* 2 (fx+ nx 1))]
         [jsize12 (fx* 2 (fx+ ny 1))]
         [jsize13 (fx* 2 (fx+ nz 1))]
-        [jsize3 (* 2 (+ ny 1))]
-        [jsize4 (* 2 (+ ny 1))]
-        [ksize3 (* (* 2 (+ ny 1)) nx)]
-        [ksize4 (* (* 2 (+ ny 1)) nz)]
+        [jsize3 (fx* 2 (fx+ ny 1))]
+        [jsize4 (fx* 2 (fx+ ny 1))]
+        [ksize3 (fx* (fx* 2 (fx+ ny 1)) nx)]
+        [ksize4 (fx* (fx* 2 (fx+ ny 1)) nz)]
         [ap (fl* (fl* -4.0 alpha) (expt pi 2))] 
         [n12 (quotient nx 2)] 
         [n22 (quotient ny 2)] 

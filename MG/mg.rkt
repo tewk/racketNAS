@@ -44,13 +44,6 @@
                     [unsafe-vector-set! vs!]
                     [unsafe-flvector-ref flvr] 
                     [unsafe-flvector-set! flvs!]
-                    [unsafe-fl+ fl+op]
-                    [unsafe-fl- fl-op]
-                    [unsafe-fl* fl*op]
-                    [unsafe-fl/ fl/]
-                    [unsafe-fx+ fx+op]
-                    [unsafe-fx- fx-]
-                    [unsafe-fx* fx*op]
                     [unsafe-fx= fx=]
 ))
 

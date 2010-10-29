@@ -11,8 +11,10 @@
                     [unsafe-fl* fl*op]
                     [unsafe-fl/ fl/]
                     [unsafe-fx+ fx+op]
-                    [unsafe-fx- fx-]
+                    [unsafe-fx- fx-op]
                     [unsafe-fx* fx*op]
+                    [unsafe-fx= fx=]
+                    [unsafe-flmax flmax]
 ))
 (provide define-syntax-case
          PICK2M
@@ -23,7 +25,7 @@
          PICK3
          <epsilon-vmap
 
-        fx++ fx-- fx+ fx* fl+ fl- fl* f!+ f!- f!* f!/)
+        fx++ fx-- fx+ fx- fx* fl+ fl- fl* fl/ f!+ f!- f!* f!/ flmax flmax* fx=)
 
 (define-syntax-rule (define-syntax-case (N a ...) b ...)
   (define-syntax (N stx)
@@ -74,6 +76,12 @@
     [(_ a) #'a]
     [(_ a b) #'(fx+op a b)]
     [(_ a b c ...) #'(fx+op (fx+op a b) (fx+ c ...))]))
+
+(define-syntax (fx- stx)
+  (syntax-case stx ()
+    [(_ a) #'(fx-op 0 a)]
+    [(_ a b) #'(fx-op a b)]
+    [(_ a b c ...) #'(fx- (fx-op a b) c ...)]))
 
 (define-syntax (fx* stx)
   (syntax-case stx ()

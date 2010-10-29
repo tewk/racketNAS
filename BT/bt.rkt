@@ -41,69 +41,20 @@
                                 shared-flvector
                                 flvector-length
                                 flvector
-                                flmax))
+                                ))
+#|
+|#
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
                     [unsafe-flvector-ref fr] 
                     [unsafe-flvector-set! f!]
-                    [unsafe-fl+ fl+op]
-                    [unsafe-fl- fl-op]
-                    [unsafe-fl* fl*op]
-                    [unsafe-fl/ fl/]
-                    [unsafe-fx+ fx+op]
-                    [unsafe-fx- fx-]
-                    [unsafe-fx* fx*]
 ))
  
 (define-syntax-rule (vidx3 i1 i2 i3 n1 n2) (fx+ i1 (fx* n1 (fx+ i2 (fx* n2 i3)))))
 (define-syntax-rule (vr3 v i1 i2 i3 n1 n2) (vr v (vidx3 i1 i2 i3 n1 n2)))
 (define-syntax-rule (vidx off i1 i2 i3 n1 n2) (fx+ off (vidx3 i1 i2 i3 n1 n2)))
 (define-syntax-rule (vro3 v off i1 i2 i3 n1 n2) (vr v (fx+ off (vidx3 i1 i2 i3 n1 n2))))
-
-(define-syntax-rule (fx++ a) (fx+ a 1))
-(define-syntax-rule (fx-- a) (fx- a 1))
-(define-syntax (fx+ stx)
-  (syntax-case stx ()
-    [(_ a) #'a]
-    [(_ a b) #'(fx+op a b)]
-    [(_ a b c ...) #'(fx+op (fx+op a b) (fx+ c ...))]))
-;(define-syntax-rule (fx+* a ...) (fx+ a ...))
-
-(define-syntax (fl+ stx)
-  (syntax-case stx ()
-    [(_ a) #'a]
-    [(_ a b) #'(fl+op a b)]
-    [(_ a b c ...) #'(fl+op (fl+op a b) (fl+ c ...))]))
-
-(define-syntax (fl- stx)
-  (syntax-case stx ()
-    [(_ a) #'(fl-op 0.0 a)]
-    [(_ a b) #'(fl-op a b)]
-    [(_ a b c ...) #'(fl- (fl-op a b) c ...)]))
-
-(define-syntax (fl* stx)
-  (syntax-case stx ()
-    [(_ a) #'a]
-    [(_ a b) #'(fl*op a b)]
-    [(_ a b c ...) #'(fl*op (fl*op a b) (fl* c ...))]))
-
-(define-syntax-rule (f!+ v idx_ val ...)
-  (let ([idx idx_])
-    (f! v idx (fl+ (fr v idx) val ...))))
-(define-syntax-rule (f!- v idx_ val ...)
-  (let ([idx idx_])
-    (f! v idx (fl- (fr v idx) val ...))))
-(define-syntax-rule (f!* v idx_ val ...)
-  (let ([idx idx_])
-    (f! v idx (fl* (fr v idx) val ...))))
-(define-syntax-rule (f!/ v idx_ val ...)
-  (let ([idx idx_])
-    (f! v idx (fl/ (fr v idx) val ...))))
-(define-syntax (flmax* stx)
-  (syntax-case stx ()
-    [(_ a b) #'(flmax a b)]
-    [(_ a b ...) #'(flmax a (flmax* b ...))]))
 
 (define (get-class-size CLASS)
   (case CLASS 

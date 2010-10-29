@@ -8,7 +8,7 @@
 (require "../timer.rkt")
 (require "../parallel-utils.rkt")
 (require "../debug.rkt")
-(require "../macros.rkt")
+(require (rename-in "../macros.rkt" [f!+ flvs!+] [f!- flvs!-] [f!* flvs!*] [f!/ flvs!/]))
 (require (for-syntax "../macros.rkt"))
 (require racket/match)
 (require racket/math)
@@ -35,76 +35,14 @@
                                 shared-flvector
                                 flvector-length
                                 flvector
-                                flmax))
+                                ))
 
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
                     [unsafe-flvector-ref flvr] 
                     [unsafe-flvector-set! flvs!]
-                    [unsafe-fl+ fl+op]
-                    [unsafe-fl- fl-op]
-                    [unsafe-fl* fl*op]
-                    [unsafe-fl/ fl/]
-                    [unsafe-fx+ fx+op]
-                    [unsafe-fx- fx-op]
-                    [unsafe-fx* fx*op]
 ))
-
-(define-syntax-rule (fx++ a) (fx+ a 1))
-(define-syntax-rule (fx-- a) (fx- a 1)) 
-(define-syntax (fx+ stx)
-  (syntax-case stx ()
-    [(_ a) #'a]
-    [(_ a b) #'(fx+op a b)]
-    [(_ a b c ...) #'(fx+op (fx+op a b) (fx+ c ...))]))
-
-(define-syntax (fx* stx)
-  (syntax-case stx ()
-    [(_ a) #'a]
-    [(_ a b) #'(fx*op a b)]
-    [(_ a b c ...) #'(fx*op (fx*op a b) (fx* c ...))]))
-
-(define-syntax (fx- stx)
-  (syntax-case stx ()
-    [(_ a) #'(fx-op 0 a)]
-    [(_ a b) #'(fx-op a b)]
-    [(_ a b c ...) #'(fx- (fx-op a b) c ...)]))
-
-(define-syntax (fl+ stx)
-  (syntax-case stx ()
-    [(_ a) #'a]
-    [(_ a b) #'(fl+op a b)]
-    [(_ a b c ...) #'(fl+op (fl+op a b) (fl+ c ...))]))
-
-(define-syntax (fl- stx)
-  (syntax-case stx ()
-    [(_ a) #'(fl-op 0.0 a)]
-    [(_ a b) #'(fl-op a b)]
-    [(_ a b c ...) #'(fl- (fl-op a b) c ...)]))
-
-(define-syntax (fl* stx)
-  (syntax-case stx ()
-    [(_ a) #'a]
-    [(_ a b) #'(fl*op a b)]
-    [(_ a b c ...) #'(fl*op (fl*op a b) (fl* c ...))]))
-
-(define-syntax-rule (flvs!+ v idx_ val ...)
-  (let ([idx idx_])
-    (flvs! v idx (fl+ (flvr v idx) val ...))))
-(define-syntax-rule (flvs!- v idx_ val ...)
-  (let ([idx idx_])
-    (flvs! v idx (fl- (flvr v idx) val ...))))
-(define-syntax-rule (flvs!* v idx_ val ...)
-  (let ([idx idx_])
-    (flvs! v idx (fl* (flvr v idx) val ...))))
-(define-syntax-rule (flvs!/ v idx_ val ...)
-  (let ([idx idx_])
-    (flvs! v idx (fl/ (flvr v idx) val ...))))
-(define-syntax (flmax* stx)
-  (syntax-case stx ()
-    [(_ a b) #'(flmax a b)]
-    [(_ a b ...) #'(flmax a (flmax* b ...))]))
 
 (define (get-class-size CLASS)
   (case CLASS 

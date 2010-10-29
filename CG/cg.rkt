@@ -32,6 +32,10 @@
                     [unsafe-fl- fl-]
                     [unsafe-fl* fl*]
                     [unsafe-fl/ fl/]
+                    [unsafe-fx+ fx+]
+                    [unsafe-fx- fx-]
+                    [unsafe-fx* fx*]
+                    [unsafe-fx= fx=]
 ))
  
 ;Constants 
@@ -123,10 +127,10 @@
 (define (cg-body cg  
           niter nrows ncols naa shift colidx rowstr x z a p q r rhomaster 
           dmaster rnormmaster tnorm1master tnorm2master presults)
-  (define serial (= 0 (CGnp cg)))
+  (define serial (fx= 0 (CGnp cg)))
 
   (CG-n0-only cg 
-    (for ([i (in-range 1 (+ naa 2))]) (flvs! x i 1.0)))
+    (for ([i (in-range 1 (fx+ naa 2))]) (flvs! x i 1.0)))
 
   (if serial
     (conj-grad nrows ncols naa shift colidx rowstr x z a p q r)
@@ -134,7 +138,7 @@
       rhomaster dmaster rnormmaster tnorm1master tnorm2master presults))
 
   (CG-n0-only cg 
-    (for ([i (in-range 1 (+ naa 2))]) (flvs! x i 1.0))
+    (for ([i (in-range 1 (fx+ naa 2))]) (flvs! x i 1.0))
     (timer-start 1))
 
   (begin0
@@ -379,13 +383,13 @@
                    [tnorm2 0.0])
                 ([j (in-range 1 (add1 ncols))])
           (let ([zj (flvr z j)])
-            (values (+ tnorm1 (* (flvr x j) zj))
-                    (+ tnorm2 (* zj zj)))))])
-        (values tnorm1 (/ 1.0 (sqrt tnorm2))))])
+            (values (fl+ tnorm1 (fl* (flvr x j) zj))
+                    (fl+ tnorm2 (fl* zj zj)))))])
+        (values tnorm1 (fl/ 1.0 (sqrt tnorm2))))])
 
     (for ([j (in-range 1 (add1 ncols))])
-      (flvs! x j (* tnorm2 (flvr z j))))
-    (values rnorm (+ shift (/ 1.0 tnorm1)))))
+      (flvs! x j (fl* tnorm2 (flvr z j))))
+    (values rnorm (+ shift (fl/ 1.0 tnorm1)))))
 
 
 (define (parallel-conj-grad cg it nrows ncols naa shift colidx rowstr x z a p q r rhomaster dmaster rnormmaster tnorm1master tnorm2master presults)
