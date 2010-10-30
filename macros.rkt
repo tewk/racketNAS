@@ -1,6 +1,6 @@
 #lang racket/base
 (require (for-syntax racket/base))
-(require (only-in racket/flonum flvector-length [flvector-ref fr] [flvector-set! f!]))
+(require (only-in racket/flonum flvector-length flmax [flvector-ref fr] [flvector-set! f!]))
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
@@ -14,7 +14,7 @@
                     [unsafe-fx- fx-op]
                     [unsafe-fx* fx*op]
                     [unsafe-fx= fx=]
-                    [unsafe-flmax flmax]
+;                    [unsafe-flmax flmax]
 ))
 (provide define-syntax-case
          PICK2M
