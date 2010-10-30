@@ -406,7 +406,7 @@
         (let ([xj (flvr x j)])
           (flvs! r j xj)
           (flvs! p j xj)
-          (fl+ rho (fl* xj xj)))))
+          (fl+X rho (fl* xj xj)))))
     (CG-n0-only cg (flvs! presults RHO (for/fold ([rho 0.0]) ([m (in-range np)]) (fl+ rho (flvr rhomaster m))))
 ;    (printf "rho1 ~a ~a\n" (flvr presults RHO) it)
 )
@@ -466,8 +466,8 @@
                [zj (flvr z j)]
                [xj (flvr x j)]
                [xj-rj (fl- xj rj)])
-          (values (fl+ tnorm1 (fl* xj zj))
-                  (fl+ tnorm2 (fl* zj zj))
+          (values (fl+X tnorm1 (fl* xj zj))
+                  (fl+X tnorm2 (fl* zj zj))
                   (fl+ rnorm (fl* xj-rj xj-rj)))))])
       (flvs! tnorm1master id tnorm1)
       (flvs! tnorm2master id tnorm2)
@@ -487,7 +487,7 @@
                     (fl+ rnorm (flvr rnormmaster m))))])
         (flvs! presults RNORM (sqrt rnorm))
         (flvs! presults TNORM2 (fl/ 1.0 (sqrt tnorm2)))
-        (flvs! presults ZETA (fl+ (exact->inexact shift) (/ 1.0 tnorm1))))
+        (flvs! presults ZETA (fl+ (exact->inexact shift) (fl/ 1.0 tnorm1))))
 ;    (printf "NORM2 ~a~n" (flvr presults TNORM2))
 )
 
