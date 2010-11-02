@@ -2,17 +2,17 @@
 
 (provide main)
   
-(require "../bm-args.rkt") 
-(require "../bm-results.rkt") 
-(require "../rand-generator.rkt")
-(require "../timer.rkt")
-(require "../parallel-utils.rkt")
-(require "../debug.rkt")
-(require "../macros.rkt")
+(require "bm-args.rkt") 
+(require "bm-results.rkt") 
+(require "rand-generator.rkt")
+(require "timer.rkt")
+(require "parallel-utils.rkt")
+(require "debug.rkt")
+(require "macros.rkt")
 (require racket/match)
 (require racket/math)
 (require (for-syntax scheme/base))
-(require (for-syntax "../macros.rkt"))
+(require (for-syntax "macros.rkt"))
 
 #|
 (require (only-in scheme/flonum make-flvector 

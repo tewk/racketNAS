@@ -2,12 +2,11 @@
 
 (provide main)
   
-(require "../bm-args.rkt") 
-(require "../bm-results.rkt") 
-(require "../rand-generator.rkt")
-(require "../timer.rkt")
-;(require "../macros.rkt")
-(require "../parallel-utils.rkt")
+(require "bm-args.rkt") 
+(require "bm-results.rkt") 
+(require "rand-generator.rkt")
+(require "timer.rkt")
+(require "parallel-utils.rkt")
 (require racket/future)
 (require racket/list)
 (require racket/match)

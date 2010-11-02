@@ -2,15 +2,13 @@
 
 (require racket/future)
 (require racket/vector)
-(require "../bm-args.rkt")
-(require "../bm-results.rkt")
-(require "../rand-generator.rkt")
-(require "../timer.rkt")
-(require "../parallel-utils.rkt")
-;(require "places-mpi.rkt")
+(require "bm-args.rkt")
+(require "bm-results.rkt")
+(require "rand-generator.rkt")
+(require "timer.rkt")
+(require "parallel-utils.rkt")
 
 (provide main)
-;(provide sort-start-worker)
 
 ;; safe primitives
 ;;#;
