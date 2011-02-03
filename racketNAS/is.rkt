@@ -157,7 +157,7 @@
     ;In this section, the keys themselves are used as their 
     ;own indices to determine how many of each there are: their 
     ;individual population 
-    (for ([i (p-range cg (in-range num-keys))])
+    (CGfor cg ([i (in-range num-keys)])
         (fx++! local-hist (fxr key-array i)))
 
     ;Now they have individual key population 
@@ -171,7 +171,7 @@
 
     (CG-Parallel-Only cg 
       ;Parallel calculation of the master's histogram
-      (for ([i (p-range cg (in-range max-key))])
+      (CGfor cg ([i (in-range max-key)])
         (fx! master-hist i 
              (for/fold ([accum 0]) ([j (in-range num-threads)])
                (fx+ accum (fxr (vr local-hists j) i))))))

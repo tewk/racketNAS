@@ -10,11 +10,10 @@
 (require "macros.rkt")
 (require "debug.rkt")
 (require racket/match)
-(require racket/math)
 (require (for-syntax racket/base
                      racket/list))
 
-(require (only-in scheme/flonum make-flvector make-shared-flvector shared-flvector flvector-length))
+(require (only-in scheme/flonum make-flvector make-shared-flvector shared-flvector))
 ;(require (only-in scheme/flonum flvector-set! flvector-ref))
 ;(define vr vector-ref)
 ;(define vs! vector-set!)
@@ -44,35 +43,8 @@
                     [unsafe-vector-set! vs!]
                     [unsafe-flvector-ref flvr] 
                     [unsafe-flvector-set! flvs!]
-                    [unsafe-fx= fx=]
 ))
 
-(define-syntax (*it stx)
-  (syntax-case stx ()
-    [(_ id)
-    (with-syntax ([NAME (datum->syntax #'id (string->symbol (string-append (symbol->string (syntax->datum #'id)) "*")))])
-      #'(define-syntax (NAME stx)
-        (syntax-case stx ()
-          [(_ a b) #'(id a b)]
-          [(_ a b c) #'(id a (id b c))]
-          [(_ a (... ...)) (let-values ([(b c) (split-at #'(a (... ...)) (quotient (length #'(a (... ...)))))])
-            (with-syntax ([(d (... ...)) b]
-                          [(e (... ...)) c])
-            #'(id (NAME d (... ...)) (NAME e (... ...)))))])))]))
-(*it fl+)
-(*it fl-)
-
-(define-syntax (fx** stx)
-  (define (halves lst)
-    (values (split-at lst (quotient (length lst) 2))))
-  (syntax-case stx ()
-    [(_ a b) #'(fx* a b)]
-    [(_ a b c) #'(fx* a (fx* b c))]
-    [(_ a ...) (let-values ([(b c) (halves #'(a ...))])
-      (with-syntax ([(d ...) b]
-                    [(e ...) c])
-      #'(fx* (fx** d ...) (fx** e ...))))]))
-    
  
 (define (get-class-size CLASS)
   (case CLASS 
@@ -193,7 +165,6 @@
 
 (define-syntax-rule (vidx3 i1 i2 i3 n1 n2) (fx+ i1 (fx* n1 (fx+ i2 (fx* n2 i3)))))
 (define-syntax-rule (vr3 v i1 i2 i3 n1 n2) (flvr v (vidx3 i1 i2 i3 n1 n2)))
-(define-syntax-rule (vidx off i1 i2 i3 n1 n2) (fx+ off (vidx3 i1 i2 i3 n1 n2)))
 (define-syntax-rule (vro3 v off i1 i2 i3 n1 n2) (flvr v (fx+ off (vidx3 i1 i2 i3 n1 n2))))
 
 (define (verify class rnm2)
@@ -367,7 +338,7 @@
            [i1 (in-range 1 (fx-- n1))])
       (let ([rv (vr3 r i1 i2 i3 n1 n2)])
         (values (max rnmu (abs rv)) (+ rnm2 (* rv rv)))))])
-    (sqrt (/ rnm2 (fx** nx ny nz)))))
+    (sqrt (/ rnm2 (fx* nx ny nz)))))
 
 (define (bubble ten j1 j2 j3 m ind)
   (define-syntax-rule (swapv v i0 i1 v0 v1)
@@ -397,50 +368,71 @@
     (swapem >)
     (swapem <)))
 
-(define (stencil1 u ii1 i2 i3 n1 n3)
-  (fl+ (fl+ (vr3 u ii1 (fx- i2 1) i3         n1 n3)
-            (vr3 u ii1 (fx+ i2 1) i3         n1 n3))
-       (fl+ (vr3 u ii1 i2         (fx- i3 1) n1 n3)
-            (vr3 u ii1 i2         (fx+ i3 1) n1 n3))))
-
-(define (stencil2 u ii1 i2 i3 n1 n3)
-  (fl+ (fl+ (vr3 u ii1 (fx- i2 1) (fx- i3 1) n1 n3)
-            (vr3 u ii1 (fx+ i2 1) (fx- i3 1) n1 n3))
-       (fl+ (vr3 u ii1 (fx- i2 1) (fx+ i3 1) n1 n3)
-            (vr3 u ii1 (fx+ i2 1) (fx+ i3 1) n1 n3))))
+(define-syntax-rule (stencilA u i1 idx1 idx2 idx3 idx4)
+  (fl+ (flvr u (fx+ i1 idx1))
+       (flvr u (fx+ i1 idx2))
+       (flvr u (fx+ i1 idx3))
+       (flvr u (fx+ i1 idx4))))
 
 (define (resid cg a u v r off n1 n2 n3 nm u1 u2)
   (CGfor cg ([i3 (in-range 1 (fx-- n3))])
+    (let* ([i3n3 (fx* i3 n3)]
+           [i3-n3 (fx- i3n3 n3)]
+           [i3+n3 (fx+ i3n3 n3)])
     (for ([i2 (in-range 1 (fx-- n2))])
+      (let* ([i2i3n1 (fx* (fx+ i2 i3n3) n1)]
+             [i2i3-n1 (fx* (fx+ i2 i3-n3) n1)]
+             [i2i3+n1 (fx* (fx+ i2 i3+n3) n1)]
+             [i2-i3n1 (fx* (fx+ (fx- i2 1) i3n3)  n1)]
+             [i2+i3n1 (fx* (fx+ (fx+ i2 1) i3n3)  n1)]
+             [i2-i3-n1 (fx* (fx+ (fx- i2 1) i3-n3)  n1)]
+             [i2+i3-n1 (fx* (fx+ (fx+ i2 1) i3-n3)  n1)]
+             [i2-i3+n1 (fx* (fx+ (fx- i2 1) i3+n3)  n1)]
+             [i2+i3+n1 (fx* (fx+ (fx+ i2 1) i3+n3)  n1)])
       (for ([i1 (in-range n1)])
         (let ([ii1 (fx+ off i1)])
-          (flvs! u1 i1 (stencil1 u ii1 i2 i3 n1 n3))
-          (flvs! u2 i1 (stencil2 u ii1 i2 i3 n1 n3))))
+          (flvs! u1 i1 (stencilA u ii1 i2i3-n1 i2i3+n1 i2-i3n1 i2+i3n1))
+          (flvs! u2 i1 (stencilA u ii1 i2-i3-n1 i2+i3-n1 i2-i3+n1 i2+i3+n1))))
 
-    (for ([i1 (in-range 1 (fx-- n1))])
-      (flvs! r (vidx off i1 i2 i3 n1 n3) 
-             (fl- (vro3 v off i1 i2 i3 n1 n3)
-                (fl+ (fl* (flvr a 0) (vro3 u off i1 i2 i3 n1 n3))
-                (fl+ (fl* (flvr a 2) (fl+ (flvr u2 i1) (fl+ (flvr u1 (fx-- i1)) (flvr u1 (fx++ i1)))))
-                     (fl* (flvr a 3) (fl+ (flvr u2 (fx-- i1)) (flvr u2 (fx++ i1)))))))))))
+      (for ([i1 (in-range 1 (fx-- n1))])
+        (let ([idx (fx+ off i1 i2i3n1)])
+        (flvs! r idx
+               (fl- (flvr v idx)
+                  (fl+ (fl* (flvr a 0) (flvr u idx))
+                  (fl+ (fl* (flvr a 2) (fl+ (flvr u2 i1) (fl+ (flvr u1 (fx-- i1)) (flvr u1 (fx++ i1)))))
+                       (fl* (flvr a 3) (fl+ (flvr u2 (fx-- i1)) (flvr u2 (fx++ i1))))))))))))))
   (comm3 cg r off n1 n2 n3))
 
 (define (psinv cg c r u off n1 n2 n3 nm r1 r2)
   (CGfor cg ([i3 (in-range 1 (fx-- n3))])
+    (let* ([i3n3 (fx* i3 n3)]
+           [i3-n3 (fx- i3n3 n3)]
+           [i3+n3 (fx+ i3n3 n3)])
     (for ([i2 (in-range 1 (fx-- n2))])
+      (let* ([i2i3n1 (fx* (fx+ i2 i3n3) n1)]
+             [i2i3-n1 (fx* (fx+ i2 i3-n3) n1)]
+             [i2i3+n1 (fx* (fx+ i2 i3+n3) n1)]
+             [i2-i3n1 (fx* (fx+ (fx- i2 1) i3n3)  n1)]
+             [i2+i3n1 (fx* (fx+ (fx+ i2 1) i3n3)  n1)]
+             [i2-i3-n1 (fx* (fx+ (fx- i2 1) i3-n3)  n1)]
+             [i2+i3-n1 (fx* (fx+ (fx+ i2 1) i3-n3)  n1)]
+             [i2-i3+n1 (fx* (fx+ (fx- i2 1) i3+n3)  n1)]
+             [i2+i3+n1 (fx* (fx+ (fx+ i2 1) i3+n3)  n1)])
       (for ([i1 (in-range n1)])
         (let ([ii1 (fx+ off i1)])
-          (flvs! r1 i1 (stencil1 r ii1 i2 i3 n1 n2))
-          (flvs! r2 i1 (stencil2 r ii1 i2 i3 n1 n2))))
+          (flvs! r1 i1 (stencilA r ii1 i2i3-n1 i2i3+n1 i2-i3n1 i2+i3n1))
+          (flvs! r2 i1 (stencilA r ii1 i2-i3-n1 i2+i3-n1 i2-i3+n1 i2+i3+n1))))
+
       (for ([i1 (in-range 1 (fx-- n1))])
-        (flvs! u (vidx off i1 i2 i3 n1 n2) 
+        (let ([idx (fx+ off i1 i2i3n1)])
+        (flvs! u idx
           (fl+ 
-             (fl+ (flvr u (vidx off i1 i2 i3 n1 n2))
-                  (fl* (flvr c 0) (vro3 r off i1 i2 i3 n1 n2)))
-             (fl+ (fl* (flvr c 1) (fl+ (vro3 r off (fx-- i1) i2 i3 n1 n2)
-                                  (fl+ (vro3 r off (fx++ i1) i2 i3 n1 n2)
+             (fl+ (flvr u idx)
+                  (fl* (flvr c 0) (flvr r idx)))
+             (fl+ (fl* (flvr c 1) (fl+ (flvr r (fx-- idx))
+                                  (fl+ (flvr r (fx++ idx))
                                        (flvr r1 i1))))
-                  (fl* (flvr c 2) (fl+ (flvr r2 i1) (fl+ (flvr r1 (fx-- i1)) (flvr r1 (fx++ i1)))))))))))
+                  (fl* (flvr c 2) (fl+ (flvr r2 i1) (fl+ (flvr r1 (fx-- i1)) (flvr r1 (fx++ i1))))))))))))))
 
   (comm3 cg u off n1 n2 n3))
 
@@ -484,33 +476,47 @@
         [d2 (if (fx= m2k 3) 2 1)]
         [d3 (if (fx= m3k 3) 2 1)])
     (CGfor cg ([j3 (in-range 2 m3j)])
-      (let ([i3 (fx- (fx- (fx* 2 j3) d3) 1)])
+      (let* ([j3-m (fx* (fx-- j3) m2j)]
+             [i3 (fx- (fx* 2 j3) d3 1)]
+             [i3m2k (fx* i3 m2k)]
+             [i3-m2k (fx- i3m2k m2k)]
+             [i3+m2k (fx+ i3m2k m2k)])
         (for ([j2 (in-range 2 m2j)])
-          (let ([i2 (fx- (fx- (fx* 2 j2) d2) 1)])
+          (let* ([i2 (fx- (fx- (fx* 2 j2) d2) 1)]
+                 [j2-m (fx* m1j (fx+ (fx-- j2) j3-m))]
+                 [i2i3m1k (fx* (fx+ i2 i3m2k) m1k)]
+                 [i2i3-m1k (fx* (fx+ i2 i3-m2k) m1k)]
+                 [i2i3+m1k (fx* (fx+ i2 i3+m2k) m1k)]
+                 [i2-i3m1k (fx* (fx+ (fx- i2 1) i3m2k)  m1k)]
+                 [i2+i3m1k (fx* (fx+ (fx+ i2 1) i3m2k)  m1k)]
+                 [i2-i3-m1k (fx* (fx+ (fx- i2 1) i3-m2k)  m1k)]
+                 [i2+i3-m1k (fx* (fx+ (fx+ i2 1) i3-m2k)  m1k)]
+                 [i2-i3+m1k (fx* (fx+ (fx- i2 1) i3+m2k)  m1k)]
+                 [i2+i3+m1k (fx* (fx+ (fx+ i2 1) i3+m2k)  m1k)])
+
             (for ([j1 (in-range 2 (fx++ m1j))])
               (let* ([i1 (fx- (fx- (fx* 2 j1) d1) 1)]
                      [ii1 (fx- (fx+ roff i1) 1)])
-                (flvs! x1 (fx-- i1) (stencil1 r ii1 i2 i3 m1k m2k))
-                (flvs! y1 (fx-- i1) (stencil2 r ii1 i2 i3 m1k m2k))))
+                (flvs! x1 (fx-- i1) (stencilA r ii1 i2i3-m1k i2i3+m1k i2-i3m1k i2+i3m1k))
+                (flvs! y1 (fx-- i1) (stencilA r ii1 i2-i3-m1k i2+i3-m1k i2-i3+m1k i2+i3+m1k))))
 
             (for ([j1 (in-range 2 m1j)])
               (let* ([i1 (fx- (fx- (fx* 2 j1) d1) 1)]
                      [ii1 (fx+ roff i1)]
-                     [x2 (stencil1 r ii1 i2 i3 m1k m2k)]
-                     [y2 (stencil2 r ii1 i2 i3 m1k m2k)])
+                     [x2 (stencilA r ii1 i2i3-m1k i2i3+m1k i2-i3m1k i2+i3m1k)]
+                     [y2 (stencilA r ii1 i2-i3-m1k i2+i3-m1k i2-i3+m1k i2+i3+m1k)])
 
-                (let ([a1 (fl* 0.5       (vro3 r roff i1        i2 i3 m1k m2k))]
-                      [a2 (fl* 0.25   (fl+ (vro3 r roff (fx-- i1) i2 i3 m1k m2k)
-                                       (fl+ (vro3 r roff (fx++ i1) i2 i3 m1k m2k)
-                                       x2)))]
-                      [a3 (fl* 0.125  (fl+ (flvr x1 (fx-- i1)) 
-                                       (fl+ (flvr x1 (fx++ i1)) 
-                                       y2)))]
-                      [a4 (fl* 0.0625 (fl+ (flvr y1 (fx-- i1)) 
-                                       (flvr y1 (fx++ i1))))])
-
-                (flvs! r (vidx soff (fx-- j1) (fx-- j2) (fx-- j3) m1j m2j)
-                         (fl+ (fl+ a1 a2) (fl+ a3 a4)))))))))))
+                (let* ([idx (fx+ roff i1 i2i3m1k)]
+                       [a1 (fl* 0.5    (flvr r idx))]
+                       [a2 (fl* 0.25   (fl+ (flvr r (fx-- idx))
+                                            (flvr r (fx++ idx))
+                                             x2))]
+                       [a3 (fl* 0.125  (fl+ (flvr x1 (fx-- i1)) 
+                                            (flvr x1 (fx++ i1)) 
+                                            y2))]
+                       [a4 (fl* 0.0625 (fl+ (flvr y1 (fx-- i1)) 
+                                            (flvr y1 (fx++ i1))))])
+                (flvs! r (fx+ soff (fx-- j1) j2-m) (fl+ a1 a2 a3 a4))))))))))
 
   (comm3 cg r soff m1j m2j m3j))
 
@@ -520,56 +526,55 @@
            (not (= n2 3))
            (not (= n3 3)))
     (CGfor cg ([i3 (in-range 1 mm3)])
+      (let* ([i32  (fx* (fx- (fx* 2 i3) 2) n2)]
+             [i31  (fx* (fx- (fx* 2 i3) 1) n2)]
+             [si3mm2 (fx* (fx-- i3) mm2)]
+             [si3_mm2 (fx+ si3mm2 mm2)])
       (for ([i2 (in-range 1 mm2)])
+        (let* ([i22    (fx- (fx* 2 i2) 2)]
+               [i21    (fx- (fx* 2 i2) 1)]
+               [i22i32 (fx* n1 (fx+ i22 i32))]
+               [i22i31 (fx* n1 (fx+ i22 i31))]
+               [i21i32 (fx+ n1 i22i32)]
+               [i21i31 (fx+ n1 i22i31)]
+               [si2mm1 (fx* mm1 (fx+ (fx-- i2) si3mm2))]
+               [si2_mm1 (fx+ mm1 si2mm1)]
+               [si2mm1_ (fx* mm1 (fx+ (fx-- i2) si3_mm2))]
+               [si2_mm1_ (fx+ mm1 si2mm1_)])
         (for ([i1 (in-range 1 (fx++ mm1))])
           (let* ([si1 (fx-- i1)]
                  [si2 (fx-- i2)]
                  [si3 (fx-- i3)]
                  [ii (fx+ zoff si1)]
-                 [u_s (vr3 u ii  i2 si3 mm1 mm2)]
-                 [uss (vr3 u ii si2 si3 mm1 mm2)]
-                 [us_ (vr3 u ii si2  i3 mm1 mm2)]
-                 [u__ (vr3 u ii  i2  i3 mm1 mm2)])
+                 [u_s (flvr u (fx+ ii si2_mm1))]
+                 [uss (flvr u (fx+ ii si2mm1))]
+                 [us_ (flvr u (fx+ ii si2mm1_))]
+                 [u__ (flvr u (fx+ ii si2_mm1_))])
             (flvs! z1 si1 (fl+ u_s uss))
             (flvs! z2 si1 (fl+ us_ uss))
             (flvs! z3 si1 (fl+ u__ (fl+ us_ (flvr z1 (fx-- i1)))))))
         (for ([i1 (in-range 1 mm1)])
-          (let* ([si1 (fx-- i1)]
-                 [si2 (fx-- i2)]
-                 [si3 (fx-- i3)]
-                 [xi1 (fx- (fx* 2 i1) 2)]
-                 [xi2 (fx- (fx* 2 i2) 2)]
-                 [xi3 (fx- (fx* 2 i3) 2)]
-                 [ii (fx+ uoff xi1)] 
-                 [jj (fx+ zoff si1)] 
-                 [uz1 (vr3 u jj        si2 si3 mm1 mm2)]
-                 [uz2 (vr3 u (fx++ jj) si2 si3 mm1 mm2)])
-            (vs!+ u (vidx3 ii        xi2 xi3 n1 n2) uz1)
-            (vs!+ u (vidx3 (fx++ ii) xi2 xi3 n1 n2) (fl* 0.5 (+ uz2 uz1)))))
+          (let* ([ii  (fx+ uoff (fx- (fx* 2 i1) 2))]
+                 [jj  (fx+ zoff (fx-- i1))]
+                 [uz1 (flvr u (fx+ jj si2mm1))]
+                 [uz2 (flvr u (fx+ jj 1 si2mm1))])
+            (vs!+ u (fx+ ii i22i32) uz1)
+            (vs!+ u (fx+ ii 1 i22i32) (fl* 0.5 (fl+ uz2 uz1)))))
         (for ([i1 (in-range 1 mm1)])
-          (let* ([xi1 (fx- (fx* 2 i1) 2)]
-                 [xi2 (fx- (fx* 2 i2) 1)]
-                 [xi3 (fx- (fx* 2 i3) 2)]
-                 [ii (fx+ uoff xi1)] 
+          (let* ([ii (fx+ uoff (fx- (fx* 2 i1) 2))]
                  [zvs (flvr z1 (fx-- i1))])
-            (vs!+ u (vidx3 ii        xi2 xi3 n1 n2) (fl* 0.5 zvs))
-            (vs!+ u (vidx3 (fx++ ii) xi2 xi3 n1 n2) (fl* 0.25 (fl+ zvs (flvr z1 i1))))))
+            (vs!+ u (fx+ ii i21i32) (fl* 0.5 zvs))
+            (vs!+ u (fx+ ii 1 i21i32) (fl* 0.25 (fl+ zvs (flvr z1 i1))))))
         (for ([i1 (in-range 1 mm1)])
-          (let* ([xi1 (fx- (fx* 2 i1) 2)]
-                 [xi2 (fx- (fx* 2 i2) 2)]
-                 [xi3 (fx- (fx* 2 i3) 1)]
-                 [ii (fx+ uoff xi1)] 
+          (let* ([ii (fx+ uoff (fx- (fx* 2 i1) 2))]
                  [zvs (flvr z2 (fx-- i1))])
-            (vs!+ u (vidx3 ii        xi2 xi3 n1 n2) (fl* 0.5 zvs))
-            (vs!+ u (vidx3 (fx++ ii) xi2 xi3 n1 n2) (fl* 0.25 (fl+ zvs (flvr z2 i1))))))
+            (vs!+ u (fx+ ii i22i31) (fl* 0.5 zvs))
+            (vs!+ u (fx+ ii 1 i22i31) (fl* 0.25 (fl+ zvs (flvr z2 i1))))))
         (for ([i1 (in-range 1 mm1)])
-          (let* ([xi1 (fx- (fx* 2 i1) 2)]
-                 [xi2 (fx- (fx* 2 i2) 1)]
-                 [xi3 (fx- (fx* 2 i3) 1)]
-                 [ii (fx+ uoff xi1)] 
+          (let* ([ii (fx+ uoff (fx- (fx* 2 i1) 2))]
                  [zvs (flvr z3 (fx-- i1))])
-            (vs!+ u (vidx3 ii        xi2 xi3 n1 n2) (fl* 0.25 zvs))
-            (vs!+ u (vidx3 (fx++ ii) xi2 xi3 n1 n2) (fl* 0.125 (fl+ zvs (flvr z3 i1))))))))
+            (vs!+ u (fx+ ii i21i31) (fl* 0.25 zvs))
+            (vs!+ u (fx+ ii 1 i21i31) (fl* 0.125 (fl+ zvs (flvr z3 i1))))))))))
     (let ([d1 (if (= n1 3) 2 1)]
           [t1 (if (= n1 3) 1 0)]
           [d2 (if (= n2 3) 2 1)]
@@ -639,17 +644,28 @@
 
 (define (comm3 cg u off n1 n2 n3)
   (CGfor cg ([i3 (in-range 1 (fx-- n3))])
+    (let ([i3n2 (fx* i3 n2)])
     (for ([i2 (in-range 1 (fx-- n2))])
-      (flvs! u (vidx off 0         i2 i3 n1 n2) (vro3 u off (fx- n1 2) i2 i3 n1 n2))
-      (flvs! u (vidx off (fx-- n1) i2 i3 n1 n2) (vro3 u off 1          i2 i3 n1 n2))))
+      (let ([i2i3 (fx+ off (fx* (fx+ i2 i3n2) n1))])
+      (flvs! u i2i3                 (flvr u (fx+ (fx- n1 2) i2i3)))
+      (flvs! u (fx+ (fx-- n1) i2i3) (flvr u (fx+ 1          i2i3)))))))
 
   (CGfor cg ([i3 (in-range 1 (fx-- n3))])
+    (let* ([i3n2 (fx* i3 n2)]
+          [i3n20 (fx+ off (fx* n1 i3n2))]
+          [i3n21 (fx+ n1 i3n20)]
+          [i3n2-2 (fx+ off (fx* n1 (fx+ (fx- n2 2) i3n2)))]
+          [i3n2-1 (fx+ off (fx* n1 (fx+ (fx-- n2) i3n2)))])
     (for ([i1 (in-range n1)])
-      (flvs! u (vidx off i1 0         i3 n1 n2) (vro3 u off i1 (fx- n2 2) i3 n1 n2))
-      (flvs! u (vidx off i1 (fx-- n2) i3 n1 n2) (vro3 u off i1 1          i3 n1 n2))))
+      (flvs! u (fx+ i1 i3n20)  (flvr u (fx+ i1 i3n2-2)))
+      (flvs! u (fx+ i1 i3n2-1) (flvr u (fx+ i1 i3n21))))))
 
   (CG-n0-only cg
-    (for* ([i2 (in-range n2)]
-           [i1 (in-range n1)])
-      (flvs! u (vidx off i1 i2 0         n1 n2) (vro3 u off i1 i2 (fx- n3 2) n1 n2))
-      (flvs! u (vidx off i1 i2 (fx-- n3) n1 n2) (vro3 u off i1 i2 1          n1 n2)))))
+    (for ([i2 (in-range n2)])
+    (let* ([i2n10 (fx+ off (fx* n1 i2))]
+           [i2n11 (fx+ off (fx* n1 (fx+ n2 i2)))]
+           [i2n1-2 (fx+ off (fx* n1 (fx+ (fx* (fx- n3 2) n2) i2)))]
+           [i2n1-1 (fx+ off (fx* n1 (fx+ (fx* (fx-- n3)  n2) i2)))])
+      (for ([i1 (in-range n1)])
+        (flvs! u (fx+ i1 i2n10)  (flvr u (fx+ i1 i2n1-2)))
+        (flvs! u (fx+ i1 i2n1-1) (flvr u (fx+ i1 i2n11))))))))

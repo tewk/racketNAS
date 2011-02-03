@@ -9,8 +9,8 @@
 (require "parallel-utils.rkt")
 (require racket/future)
 (require racket/list)
+(require (only-in racket/math pi))
 (require racket/match)
-(require racket/math)
 (require (for-syntax racket/base))
 
 #;(require scheme/fixnum scheme/flonum)
@@ -40,7 +40,7 @@
                  (touch f)))
              (begin
                (CG-B cg)
-               (for ([loopvar (p-range cg (in-range imax))])
+               (CGfor cg ([loopvar (in-range imax)])
                  body ...)
                (CG-B cg)))
            (for ([loopvar (in-range imax)]) body ...)))]))
@@ -85,10 +85,11 @@
         [exp2 (mkflvec (* 2 ny) 0.0)] 
         [exp3 (mkflvec (* 2 nz) 0.0)]
         [xtr  (mkflvec (* (* (* 2 (+ ny 1)) nx) nz) 0.0)]
-        [xnt  (mkflvec (* (* (* 2 (+ ny 1)) nz) nx) 0.0)])
+        [xnt  (mkflvec (* (* (* 2 (+ ny 1)) nz) nx) 0.0)]
+        [pi**2 (expt pi 2)])
 
     (CGspawn (if (or serial (not DOPLACES)) 0 num-threads)
-             fft-body nx ny nz exp1 exp2 exp3 xnt xtr maxdim niter-default checksum serial num-threads))
+             fft-body nx ny nz exp1 exp2 exp3 xnt xtr maxdim niter-default checksum serial num-threads pi**2))
 
   (timer 14
     (let ([verified (verify bmname CLASS niter-default checksum)])
@@ -167,7 +168,7 @@
     (swarztrauber sign log jc ic plane 0 jc exp scr) 
     (helper3 k ic jc isize3 jsize3 ksize3 isize1 jsize1 x plane plane->x)))
 
-(define-syntax-rule (fft-xyz cg sign x scr plane exp1 exp2 exp3 n1 n2 n3 log1 log2 log3 isize3 jsize3 ksize3 isize1 jsize11 jsize12 serial np) 
+(define-syntax-rule (fft-xyz cg sign x scr plane exp1 exp2 exp3 n1 n2 n3 log1 log2 log3 isize3 jsize3 ksize3 isize1 jsize11 jsize12 serial np)
   (begin
     (pfor cg serial np ([k (in-range n3)]) 
       ([scr scr])
@@ -183,7 +184,7 @@
        [plane plane])
       (helper2 k sign log3 n3 n1 ksize3 isize3 jsize3 isize1 jsize12 x plane exp3 scr))))
 
-(define (fft-body cg nx ny nz exp1 exp2 exp3 xnt xtr maxdim niter-default checksum serial np)
+(define (fft-body cg nx ny nz exp1 exp2 exp3 xnt xtr maxdim niter-default checksum serial np pi**2)
   (define alpha .000001)
   (define-syntax-rule (palloc serial nproc body ...)
     (if (and (not serial) (not DOPLACES))
@@ -201,7 +202,7 @@
         [jsize4 (fx* 2 (fx+ ny 1))]
         [ksize3 (fx* (fx* 2 (fx+ ny 1)) nx)]
         [ksize4 (fx* (fx* 2 (fx+ ny 1)) nz)]
-        [ap (fl* (fl* -4.0 alpha) (expt pi 2))] 
+        [ap (fl* (fl* -4.0 alpha) pi**2)] 
         [n12 (quotient nx 2)] 
         [n22 (quotient ny 2)] 
         [n32 (quotient nz 2)]

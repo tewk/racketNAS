@@ -43,6 +43,11 @@
 !     Kevin Tew                                                           !
 !-------------------------------------------------------------------------!
 
+The -tm invocation pattern is necessary to allow places to reload the benchmark .rkt file.
+
+racket -tm sp.rkt SERIAL CLASS=S
+racket -tm sp.rkt NP=1 CLASS=S
+
 #Utilities libs ported from Java
 bm-args.rkt
 bm-results.rkt

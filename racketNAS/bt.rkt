@@ -10,40 +10,15 @@
 (require "debug.rkt")
 (require "macros.rkt")
 (require racket/match)
-(require racket/math)
 (require (for-syntax scheme/base))
 (require (for-syntax "macros.rkt"))
 
-#|
 (require (only-in scheme/flonum make-flvector 
                                 make-shared-flvector 
                                 shared-flvector
-                                flvector-length
-                                flvector
-                                flmax
-                                flvector-set!
-                                flvector-ref
-                                fl+
-                                fl-
-                                fl*
-                                fl/)
-          (rename-in scheme/flonum [flvector-ref fr] 
-                                   [flvector-set! f!]))
-(require (only-in scheme/fixnum fx+ 
-                                fx-
-                                fx*))
-|#
-
-#|
-|#
-(require (only-in scheme/flonum make-flvector 
-                                make-shared-flvector 
-                                shared-flvector
-                                flvector-length
                                 flvector
                                 ))
-#|
-|#
+
 (require (rename-in scheme/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
@@ -51,11 +26,6 @@
                     [unsafe-flvector-set! f!]
 ))
  
-(define-syntax-rule (vidx3 i1 i2 i3 n1 n2) (fx+ i1 (fx* n1 (fx+ i2 (fx* n2 i3)))))
-(define-syntax-rule (vr3 v i1 i2 i3 n1 n2) (vr v (vidx3 i1 i2 i3 n1 n2)))
-(define-syntax-rule (vidx off i1 i2 i3 n1 n2) (fx+ off (vidx3 i1 i2 i3 n1 n2)))
-(define-syntax-rule (vro3 v off i1 i2 i3 n1 n2) (vr v (fx+ off (vidx3 i1 i2 i3 n1 n2))))
-
 (define (get-class-size CLASS)
   (case CLASS 
     [(#\S) (values  12  0.01    60)]
@@ -107,8 +77,8 @@
        4.2348416040525025
        4.4390282496995698E-01
        9.6692480136345650E-01
-       8.8302063039765474E-01)
-       9.7379901770829278
+       8.8302063039765474E-01
+       9.7379901770829278)
        0.0008)]
     [(#\B) (values
         (flvector
@@ -240,9 +210,9 @@
           [c1c5    (* 1.4 1.4)]
           [c3c4    (* 0.1 1.0)]
           [c1345   (* c1 c3 c4 c5)]
-          [tx1     (/ 1.0 (sqr dnxm1))]
-          [ty1     (/ 1.0 (sqr dnym1))]
-          [tz1     (/ 1.0 (sqr dnzm1))]
+          [tx1     (/ 1.0 (flsqr dnxm1))]
+          [ty1     (/ 1.0 (flsqr dnym1))]
+          [tz1     (/ 1.0 (flsqr dnzm1))]
           [tx2     (/ 1.0 (* 2.0 dnxm1))]
           [ty2     (/ 1.0 (* 2.0 dnym1))]
           [tz2     (/ 1.0 (* 2.0 dnzm1))]
@@ -598,25 +568,30 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                 (f! u idx2 (fr temp2 m)))))))))) ;top face
 
 (define (lhsinit lhs size isize4 jsize4 ksize4)
-  (for ([i (in-range 0 (add1 size) size)])
-    (let ([ik (* i ksize4)]
-          [js41 jsize4]
-          [js42 (* 2 jsize4)])
-      (for ([m (in-range 5)])
-        (for ([n (in-range 5)])
-          (let ([idx (+ m (* n isize4) ik)])
-            (f! lhs (+ (* 0 jsize4) idx) 0.0)
-            (f! lhs (+ (* 1 jsize4) idx) 0.0)
-            (f! lhs (+ (* 2 jsize4) idx) 0.0)))
-        (f! lhs (+ m (* m isize4) (* 1 jsize4) ik) 1.0)))))
+  (let* ([js42 (fx+ jsize4 jsize4)])
+    (define-syntax-rule (DOIT IK)
+      (let ([ik IK])
+        (for ([m (in-range 5)])
+          (let ([nis4 (fx* m isize4)])
+            (for ([n (in-range 5)])
+              (let ([idx (fx+ n (fx* m isize4) ik)])
+                (f! lhs idx 0.0)
+                (f! lhs (fx+ jsize4 idx) 0.0)
+                (f! lhs (fx+ js42 idx) 0.0))))
+          (f! lhs (fx+ m (fx* m isize4) jsize4 ik) 1.0))))
+    (DOIT 0)
+    (DOIT (fx* size ksize4))))
 
 (define (add cg nz2 ny2 nx2 jsize1 ksize1 isize2 jsize2 ksize2 u rhs)
   (CGfor cg ([k (in-range 1 (fx++ nz2))])
-    (for* ([j (in-range 1 (fx++ ny2))]
-           [i (in-range 1 (fx++ nx2))]
-           [m (in-range 5)])
-    (let ([idx (fx+ m (fx* i isize2) (fx* j jsize2) (fx* k ksize2))])
-      (f!+ u idx (fr rhs idx))))))
+    (define ki (fx* k ksize2))
+    (for ([j (in-range 1 (fx++ ny2))])
+    (define ji (fx+ ki (fx* j jsize2)))
+    (for ([i (in-range 1 (fx++ nx2))])
+    (define ii (fx+ ji (fx* i isize2)))
+    (for ([m (in-range 5)])
+    (let ([idx (fx+ m ii)])
+      (f!+ u idx (fr rhs idx))))))))
 
 (define-syntax-rule (matvec_sub ablock blkoffst avect avcoffst bvect bvcoffst)
   (for ([i (in-range 5)])
@@ -690,7 +665,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                 (for ([m (in-range 5)])
                   (let* ([idx (+ m (fx* i isize1) (fx* j jsize1) (fx* k ksize1))]
                          [add (fl- (fr u idx) (fr u-exact m))])
-                    (f!+ rms m (sqr add)))))))))))
+                    (f!+ rms m (flsqr add)))))))))))
 
   
   (for ([m (in-range 5)])
@@ -705,7 +680,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
          [m (in-range 5)])
     (let* ([idx (fx+ m (fx* i isize1) (fx* j jsize1) (fx* k ksize1))]
            [add (fr rhs idx)])
-      (f!+ rms m (sqr add))))
+      (f!+ rms m (flsqr add))))
   
   (for ([m (in-range 5)])
     (f! rms m (sqrt (/ (fr rms m) nx2 ny2 nz2)))))
@@ -834,10 +809,10 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                        [ueij (fr ue i1j)]
                        [uei2j (fr ue i2j)]
                        [uei3j (fr ue i3j)]
-                       [bufij2 (sqr bufij)]
-                       [bufi2j2 (sqr bufi2j)]
-                       [bufi3j2 (sqr bufi3j)])
-                (f! cuf ii (sqr (fr buf (+ ii (* A jsize3)))))
+                       [bufij2 (flsqr bufij)]
+                       [bufi2j2 (flsqr bufi2j)]
+                       [bufi3j2 (flsqr bufi3j)])
+                (f! cuf ii (flsqr (fr buf (+ ii (* A jsize3)))))
                 (f! buf ii (+ bufij2 bufi2j2 bufi3j2))
                 (f! q ii (* 0.5 (+ (* bufij ueij) (* bufi2j uei2j) (* bufi3j uei3j)))))))
 
@@ -901,7 +876,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
               (fx+ JKIDX2 (fx* ii iisize1)) dssp)
 ))))))
 
-  (define-syntax-rule (KZERO a ...) 0)
+  (define-syntax-rule (KZERO a ...) 0.0)
   (define-syntax-rule (KIDENT a ...) (begin a ...))
 
   (let ([dtemp (make-flvector 5 0.0)])
@@ -936,7 +911,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
            [u2 (fr u (fx+ idx 2))]
            [u3 (fr u (fx+ idx 3))]
            [u4 (fr u (fx+ idx 4))]
-           [sq (fl* 0.5 (fl+ (sqr u1) (sqr u2) (sqr u3)) rho_inv)])
+           [sq (fl* 0.5 (fl+ (flsqr u1) (flsqr u2) (flsqr u3)) rho_inv)])
       (f! rho_i idx2 rho_inv)
       (f! us idx2 (fl* rho_inv u1))
       (f! vs idx2 (fl* rho_inv u2))
@@ -950,7 +925,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
 
   (CG-B cg)
 
-  (define-syntax-rule (KZERO a ...) 0)
+  (define-syntax-rule (KZERO a ...) 0.0)
   (define-syntax-rule (KIDENT a ...) (begin a ...))
 
   (define-syntax-case (DISSIP A)
@@ -1002,8 +977,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                         (fl+ (fr square idx2z+) (fr u idxz-4))) 
                    c2))
             (define-syntax-rule (t_2it l r) (fl- (fl* t_2 (fl- l r))))
-;BROKEN internal error: broken unbox depth
-            (define-syntax-rule (t_2it3 l r o) (fl- (fl* t_2 (+ (fl- l r) o))))
+            (define-syntax-rule (t_2it3 l r o) (fl- (fl* t_2 (fl+ (fl- l r) o))))
             (define-syntax-rule (t_2itlr UI ZSI) (fl* (fr u UI) (fr zs ZSI)))
 
             (define-syntax-rule (mid d__t_1 __con2X ZS AA t_2m_)
@@ -1033,7 +1007,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
             (f!+ rhs idx4 
               (cit3S d_5t_1 u idxz+4 idx4 idxz-4)
               (cit2 __con3 qs)
-              (cit3 __con4 sqr zs)
+              (cit3 __con4 flsqr zs)
               (citA __con5 (CONS5W idxz+4 idx2z+)
                            (CONS5W idx4 idx2)
                            (CONS5W idxz-4 idx2z-))
@@ -1060,11 +1034,14 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
   (CG-B cg)
 
   (CGfor cg ([k (in-range 1 (fx++ nz2))])
-    (for* ([j (in-range 1 (fx++ ny2))]
-           [i (in-range 1 (fx++ nx2))]
-           [m (in-range 5)])
-    (let* ([idx (fx+ m (fx* i isize2) (fx* j jsize2) (fx* k ksize2))])
-      (f!* rhs idx dt)))))
+    (define ki (fx* k ksize2))
+    (for ([j (in-range 1 (fx++ ny2))])
+    (define ji (fx+ ki (fx* j jsize2)))
+    (for ([i (in-range 1 (fx++ nx2))])
+    (define ii (fx+ ji (fx* i isize2)))
+    (for ([m (in-range 5)])
+    (let ([idx (fx+ m ii)])
+      (f!* rhs idx dt)))))))
 
 (define (verify class no_time_steps dt compute_rhs_thunk
   nx2 ny2 nz2 isize1 jsize1 ksize1 u rhs dnzm1 dnym1 dnxm1)
@@ -1122,46 +1099,30 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
       (printf "~a. ~a ~a ~a\n" m (fr xce m) (fr xceref m) (fr xcedif m)))))
 
 (define-syntax-case (__solve NAME R)
-  (with-syntax-values ([(kk jj ii nkk2 njj2 nii2) (PICK3 #'R (k j i nz ny nx) ( k i j nz nx ny) ( j i k ny nx nz))])
+  (with-syntax-values ([(kk jj ii nkk2 njj2 nii2 kksize2 jjsize2 iisize2) 
+    (PICK3 #'R (k j i nz ny nx ksize2 jsize2 isize2) 
+               (k i j nz nx ny ksize2 isize2 jsize2) 
+               (j i k ny nx nz jsize2 isize2 ksize2))])
 
 #'(define (NAME cg nkk2 njj2 nii2 jsize1 ksize1 isize2 jsize2 ksize2 isize4 jsize4 ksize4 isize jsize ksize IISIZE u square rhs lhs fjac njac rho_i qs c1 c2 c3c4 c1345 con43 dt t_1 t_2 dtd_1t_1 dtd_2t_1 dtd_3t_1 dtd_4t_1 dtd_5t_1)
   
   (CGfor cg ([kk (in-range 1 (fx++ nkk2))])
     (for ([jj (in-range 1 (fx++ njj2))])
-      (define-syntax-case (MODDET R MACRO N1 N2 N3 V1 V2 V3 BODY (... ...))
-        (with-syntax ([LETBINDINGS (case R
-                                [(1) #'([N1 (MACRO V1)] [N2 V2] [N3 V3])]
-                                [(2) #'([N1 V1] [N2 (MACRO V2)] [N3 V3])]
-                                [(3) #'([N1 V1] [N2 V2] [N3 (MACRO V3)])]
-                                [else (raise "invalid MODDET value")])])
-        #'(let LETBINDINGS
-          BODY (... ...)
-        )))
-
-      (define-syntax-case (REPDET R N1 N2 N3 V1 V2 V3 VV1 VV2 VV3 BODY (... ...))
-        (with-syntax ([LETBINDINGS (case R
-                                [(1) #'([N1 VV1] [N2 V2] [N3 V3])]
-                                [(2) #'([N1 V1] [N2 VV2] [N3 V3])]
-                                [(3) #'([N1 V1] [N2 V2] [N3 VV3])]
-                                [else (raise "invalid REPDET value")])])
-        #'(let LETBINDINGS
-          BODY (... ...)
-        )))
-
+      (define kkjjsize2 (fx+ (fx* jj jjsize2) (fx* kk kksize2)))
       (for ([ii (in-range (fx+ nii2 2))])
         (let* ([i0jk4 (fx* ii jsize4)]
-               [i1jk4  (fx+ (fx* 1 isize4) (fx* ii jsize4))]
-               [i2jk4  (fx+ (fx* 2 isize4) (fx* ii jsize4))]
-               [i3jk4  (fx+ (fx* 3 isize4) (fx* ii jsize4))]
-               [i4jk4  (fx+ (fx* 4 isize4) (fx* ii jsize4))]
+               [i1jk4  (fx+ (fx* 1 isize4) i0jk4)]
+               [i2jk4  (fx+ (fx* 2 isize4) i0jk4)]
+               [i3jk4  (fx+ (fx* 3 isize4) i0jk4)]
+               [i4jk4  (fx+ (fx* 4 isize4) i0jk4)]
                [ijk1   (fx+ i (fx* j jsize1) (fx* k ksize1))]
-               [ijk2   (fx+ (fx* i isize2) (fx* j jsize2) (fx* k ksize2))]
+               [ijk2   (fx+ (fx* ii iisize2) kkjjsize2)]
                [ijk21  (fx+ 1 ijk2)]
                [ijk22  (fx+ 2 ijk2)]
                [ijk23  (fx+ 3 ijk2)]
                [ijk24  (fx+ 4 ijk2)]
                [tmp1 (fr rho_i ijk1)]
-               [tmp2 (sqr tmp1)]
+               [tmp2 (flsqr tmp1)]
                [tmp3 (fl* tmp1 tmp2)])
 
           (define-syntax-case (DIAG0 V A V1 V2 V3 V4 V5)
@@ -1172,50 +1133,54 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                 (f! V (fx+ A i3jk4) V4)
                 (f! V (fx+ A i4jk4) V5)))
 
-          (define-syntax-case (RETDET R2 N1 N2 N3 V1 V2 V3 BODY (... ...))
-            (with-syntax ([LETBINDINGS (case (syntax->datum #'R2)
-                                    [(1) #'([N1 V1] [N2 V2] [N3 V3])]
-                                    [(2) #'([N1 V2] [N2 V1] [N3 V3])]
-                                    [(3) #'([N1 V3] [N2 V2] [N3 V1])]
-                                    [else (raise (format "invalid RETDET value ~a" #'R1))])])
-            #'(let LETBINDINGS
-              BODY (... ...)
-            )))
-
           (define-syntax-case (ROTASN V A R1 V1 V2 V3 V4 V5)
-            #'(RETDET R1 N2 N3 N4 V2 V3 V4 (DIAG0 V A V1 N2 N3 N4 V5)))
+            (with-syntax ([(NS (... ...)) (PICK3 #'R1 (V2 V3 V4) (V3 V2 V4) (V4 V3 V2))])
+              #'(DIAG0 V A V1 NS (... ...) V5)))
 
           (ROTASN fjac 0 R 0.0 1.0 0.0 0.0 0.0)
-          (RETDET R A1 A2 A3 1 2 3
+
+           (let-syntax-with-values ([(A1 A2 A3) (PICK3 #'R (1 2 3) (2 1 3) (3 2 1))]) 
+            #'(let* ([u0 (fr u ijk2)]
+                     [uA1 (fr u (fx+ A1 ijk2))]
+                     [uA2 (fr u (fx+ A2 ijk2))]
+                     [uA3 (fr u (fx+ A3 ijk2))]
+                     [u4 (fr u (fx+ 4 ijk2))]
+                     [uR (fr u (fx+ R ijk2))]
+                     [tmp2sqruA1 (fl* tmp2 (flsqr uA1))]
+                     [tmp1uA2 (fl* tmp1 uA2)]
+                     [tmp1uA3 (fl* tmp1 uA3)]
+                     [tmp1uR (fl* tmp1 uR)]
+                     [tmp2uA2uR (fl* tmp2 uA2 uR)]
+                     [tmp2uA3uR (fl* tmp2 uA3 uR)])
+                
               (ROTASN fjac A1 R
-              (fl- (fl* c2 (fr qs ijk1)) (fl* tmp2 (sqr (fr u (fx+ A1 ijk2)))))
-              (fl/ (fl* (fl- 2.0 c2) (fr u (fx+ A1 ijk2))) (fr u ijk2))
-              (fl- (fl* c2 tmp1 (fr u (fx+ A2 ijk2))))
-              (fl- (fl* c2 tmp1 (fr u (fx+ A3 ijk2))))
-              c2)
-            (ROTASN fjac A2 R
-              (- (fl* tmp2 (fr u (fx+ A2 ijk2)) (fr u (fx+ R ijk2))))
-              (fl* tmp1 (fr u (fx+ A2 ijk2)))
-              (fl* tmp1 (fr u (fx+ R ijk2)))
-              0.0
-              0.0)
-            (ROTASN fjac A3 R
-              (fl- (fl* tmp2 (fr u (fx+ A3 ijk2)) (fr u (fx+ R ijk2))))
-              (fl* tmp1 (fr u (fx+ A3 ijk2)))
-              0.0
-              (fl* tmp1 (fr u (fx+ R ijk2)))
-              0.0))
-          (RETDET R A1 A2 A3 1 2 3 
-            (ROTASN fjac 4 R
-              (fl* tmp2 (fr u (+ R ijk2)) (fl- (fl* c2 2.0 (fr square ijk1))
-                                           (fl* c1 (fr u (fx+ 4 ijk2)))))
-              (fl- (fl* c1 tmp1 (fr u (fx+ 4 ijk2)))
-                 (fl* c2 tmp2 (sqr (fr u (fx+ A1 ijk2))))
-                 (fl* c2 (fr qs ijk1)))
-              (fl- (fl* c2 tmp2 (fr u (fx+ A2 ijk2)) (fr u (fx+ R ijk2))))
-              (fl- (fl* c2 tmp2 (fr u (fx+ A3 ijk2)) (fr u (fx+ R ijk2))))
-              (fl* c1 tmp1 (fr u (fx+ R ijk2))))
-              )
+                (fl- (fl* c2 (fr qs ijk1)) tmp2sqruA1)
+                (fl/ (fl* (fl- 2.0 c2) uA1) u0)
+                (fl- (fl* c2 tmp1uA2))
+                (fl- (fl* c2 tmp1uA3))
+                c2)
+              (ROTASN fjac A2 R
+                (fl- tmp2uA2uR)
+                 tmp1uA2
+                tmp1uR
+                0.0
+                0.0)
+              (ROTASN fjac A3 R
+                (fl- tmp2uA3uR)
+                tmp1uA3
+                0.0
+                tmp1uR
+                0.0)
+              (ROTASN fjac 4 R
+                (fl* tmp2 uR (fl- (fl* c2 2.0 (fr square ijk1))
+                                  (fl* c1 u4)))
+                (fl- (fl* c1 tmp1 u4)
+                     (fl* c2 tmp2sqruA1)
+                     (fl* c2 (fr qs ijk1)))
+                (fl- (fl* c2 tmp2uA2uR))
+                (fl- (fl* c2 tmp2uA3uR))
+                (fl* c1 tmp1uR))
+                ))
 
           (define-syntax-case (R43IT A a (... ...))
             (let ([aa (syntax->datum #'A)] 
@@ -1241,9 +1206,9 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
           (NJACM 3)
           (DIAG0 njac 4
             (fl- 0.0 
-               (fl* (fl- (R43IT 1 c3c4) c1345) tmp3 (sqr (fr u ijk21)))
-               (fl* (fl- (R43IT 2 c3c4) c1345) tmp3 (sqr (fr u ijk22)))
-               (fl* (fl- (R43IT 3 c3c4) c1345) tmp3 (sqr (fr u ijk23)))
+               (fl* (fl- (R43IT 1 c3c4) c1345) tmp3 (flsqr (fr u ijk21)))
+               (fl* (fl- (R43IT 2 c3c4) c1345) tmp3 (flsqr (fr u ijk22)))
+               (fl* (fl- (R43IT 3 c3c4) c1345) tmp3 (flsqr (fr u ijk23)))
                (fl* c1345 tmp2 (fr u ijk24)))
             (fl* (fl- (R43IT 1 c3c4) c1345) tmp2 (fr u ijk21))
             (fl* (fl- (R43IT 2 c3c4) c1345) tmp2 (fr u ijk22))
@@ -1309,28 +1274,22 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
 
 
       ; gaussian elimination 
-      (define-syntax-rule (IDX2 I J K) (fx+ (fx* I isize2) (fx* J jsize2) (fx* K ksize2)))
-      (define-syntax-rule (MINUSIT e) (fx- e 1))
-      (define-syntax-rule (ZERO2 R) (REPDET R N1 N2 N3 i j k 0 0 0 (IDX2 N1 N2 N3)))
-      (define-syntax-rule (REPIDX2 R V1 V2 V3 VV1 VV2 VV3) (REPDET R N1 N2 N3 V1 V2 V3 VV1 VV2 VV3 (IDX2 N1 N2 N3)))
+      (define-syntax-rule (IDX22 I) (fx+ (fx* I iisize2) kkjjsize2))
     
-      (define aa 0) 
-      (define bb 1) 
-      (define cc 2) 
-      (binvcrhs lhs (fx* bb jsize4)
-                lhs (fx* cc jsize4)
-                rhs (ZERO2 R))
+      (define ccj4 (fx* 2 jsize4))
+      (binvcrhs lhs jsize4
+                lhs ccj4
+                rhs kkjjsize2)
 
       (for ([ii (in-range 1 IISIZE)])
-        (define-syntax-rule (MINUS2 R) (MODDET R MINUSIT N1 N2 N3 i j k (IDX2 N1 N2 N3)))
-        (let* ([ijk2 (fx+ (fx* i isize2) (fx* j jsize2) (fx* k ksize2))]
+        (let* ([ijk2 (IDX22 ii)]
                [ik4 (fx* ii ksize4)]
                [bi4 (fx+ jsize4 ik4)]
                [ai4 ik4] 
-               [cj4 (fx+ (fx* cc jsize4) ik4)])
+               [cj4 (fx+ ccj4 ik4)])
 
         (matvec_sub lhs ai4
-                    rhs (MINUS2 R)
+                    rhs (fx+ (fx* (fx- ii 1) iisize2) kkjjsize2)
                     rhs ijk2)
 
         (matmul_sub lhs ai4
@@ -1342,29 +1301,33 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
                   rhs ijk2)))
 
       (let* ([Ik4 (fx* IISIZE ksize4)]
-             [Ijk4 (fx+ jsize4 Ik4)])
+             [Ijk4 (fx+ jsize4 Ik4)]
+             [IDX2IISIZE (IDX22 IISIZE)])
 
       (matvec_sub lhs Ik4
-                  rhs (REPIDX2 R i j k (fx- isize 1) (fx- jsize 1) (fx- ksize 1))
-                  rhs (REPIDX2 R i j k isize jsize ksize))
+                  rhs (IDX22 (fx- IISIZE 1))
+                  rhs IDX2IISIZE)
 
       (matmul_sub lhs Ik4
-                  lhs (fx+ (fx* cc jsize4) (fx- Ik4 ksize4))
+                  lhs (fx+ ccj4 (fx- Ik4 ksize4))
                   lhs Ijk4)
 
       (binvrhs    lhs Ijk4
-                  rhs (REPIDX2 R i j k isize jsize ksize)))
+                  rhs IDX2IISIZE))
 
       (for ([ii (in-range (sub1 IISIZE) -1 -1)])
-        (let ([BLOCK_SIZE 5])
+        (let* ([BLOCK_SIZE 5]
+               [iicc (fx+ ccj4 (fx* ii ksize4))]
+               [idx2 (IDX22 ii)]
+               [idx2+1 (fx+ idx2 iisize2)])
         (for ([m (in-range BLOCK_SIZE)])
-          (let ([midx (fx+ m (fx* i isize2) (fx* j jsize2) (fx* k ksize2))])
-            (define-syntax-rule (PLUSIT e) (fx+ e 1))
-            (define-syntax-rule (PLUS2 R) (MODDET R PLUSIT N1 N2 N3 i j k (IDX2 N1 N2 N3)))
+          (let ([midx (fx+ m idx2)]
+                [miicc (fx+ m iicc)])
             (f! rhs midx
               (for/fold ([x (fr rhs midx)]) ([n (in-range BLOCK_SIZE)])
-                (let ([NIidx (fx+ m (fx* n isize4) (fx* cc jsize4) (fx* ii ksize4))])
-                  (fl- x (fl* (fr lhs NIidx) (fr rhs (fx+ n (PLUS2 R)))))))))))))))))
+                (fl- x 
+                     (fl* (fr lhs (fx+ miicc (fx* n isize4))) 
+                          (fr rhs (fx+ n idx2+1)))))))))))))))
 
 (__solve x_solve 1)
 (__solve y_solve 2)
@@ -1377,7 +1340,7 @@ c1c2 rhs forcing nx2 ny2 nz2 c1 c2 dssp
          [m (in-range 5)])
     (let* ([offset (+ m (* i isize1) (* j jsize1) (* k ksize1))]
            [arro (fr arr offset)])
-      (+ csum (/ (sqr arro) (* (+ 2 nz2) (+ 2 ny2) (+ 2 nx2) 5))))))
+      (+ csum (/ (flsqr arro) (* (+ 2 nz2) (+ 2 ny2) (+ 2 nx2) 5))))))
 
 (define (get-input-pars maxlevel)
   (define fn "mg.input")
