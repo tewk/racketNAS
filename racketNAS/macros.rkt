@@ -19,7 +19,8 @@
                     [unsafe-fx= fx=]
                     [unsafe-flmax flmax]
 ))
-
+#|
+|#
 #|
 (require (only-in racket
                     [vector-ref vr] 
@@ -28,7 +29,7 @@
                     [fx+ fx+op]
                     [fx- fx-op]
                     [fx* fx*op]
-                    [fx= fx=]))
+                    fx=))
 (require (only-in racket/flonum
                     flvector-length
                     [flvector-ref flvr] 
@@ -38,7 +39,9 @@
                     [fl+ fl+op]
                     [fl- fl-op]
                     [fl* fl*op]
-                    [fl/ fl/]
+                    fl/
+                    flmax
+                    flsqrt
 ))
 |#
 (provide define-syntax-case

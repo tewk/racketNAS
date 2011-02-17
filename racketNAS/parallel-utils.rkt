@@ -10,7 +10,8 @@
                                     [unsafe-fx< fx<]
                                     [unsafe-fxabs fxabs]))
 
-(provide CGspawn CG-n0-only CG-B CGfor CGfor/fold CGid CGnp CGSingle CGSerial CGpipeline CG-Parallel-Only CGfor/stride)
+(provide CGspawn CG-n0-only CG-B CGfor CGfor/fold CGid CGnp CGSingle CGSerial CGpipeline CG-Parallel-Only CGfor/stride fork-join
+         capture-stdout-bytes)
 
 (define-syntax-rule (define-syntax-case (N a ...) b ...)
   (define-syntax (N stx)
@@ -36,7 +37,7 @@
 (define-syntax-rule (!or= x b ...)
   (not (ormap (lambda (y) (fx= x y)) (list b ...))))
 
-(define (stripe cg i st en step np)
+(define (block cg i st en step np)
   (when  (!or= step 1 -1)
     (error "step must be 1 or -1, not ~a" step))
   (define ec (fxabs (fx- en st)))
@@ -67,7 +68,7 @@
 
 (define (CG-B cg)
   (match cg
-    [(CG _ 0 _) (void)]
+    [(CG _ (or #f 0) _) (void)]
     [else
       (CG-0-recv cg)
       (CG-0-send cg)]))
@@ -82,8 +83,8 @@
       (define pls (for/list ([i (in-range 1 np)])
         (place/anon (ch)
           (match (place-channel-recv ch)
-            [(list id np pls args ...)
-              (func (make-CG id np (cons ch pls)) args ...)]))))
+            [(list-rest id np pls rargs)
+              (apply func (make-CG id np (cons ch pls)) rargs)]))))
 
       (for ([i (in-range 1 np)]
             [ch pls])
@@ -93,7 +94,7 @@
 
 (define-syntax-rule (CG-n0-only cg body ...)
   (match cg
-    [(CG _ 0 _) body ...]
+    [(CG _ (or #f 0) _) body ...]
     [(CG id _ _) 
       (CG-0-recv cg)
       (when (= id 0)
@@ -102,25 +103,25 @@
 
 (define-syntax-cases (CGfor
   [(_ cg ([V (in-range st en step)]) body ...) 
-    #'(match cg [(CG _ 0 _) (for ([V (in-range st en step)]) body ...)]
+    #'(match cg [(CG _ (or #f 0) _) (for ([V (in-range st en step)]) body ...)]
                 [(CG id np _) 
-                 (let-values ([(ST EN STEP) (stripe cg id st en step np)])
+                 (let-values ([(ST EN STEP) (block cg id st en step np)])
                   (for ([V (in-range ST EN STEP)]) body ...))])]
   [(_ cg ([V (in-range st en)])      body ...) #'(CGfor cg ([V (in-range st en 1)]) body ...)]
   [(_ cg ([V (in-range en)])         body ...) #'(CGfor cg ([V (in-range  0 en 1)]) body ...)]))
 
 (define-syntax-cases (CGfor/fold
   [(_ cg (VARS ...) ([V (in-range st en step)]) body ...) 
-    #'(match cg [(CG _ 0 _) (for/fold (VARS ...) ([V (in-range st en step)]) body ...)]
+    #'(match cg [(CG _ (or #f 0) _) (for/fold (VARS ...) ([V (in-range st en step)]) body ...)]
                 [(CG id np _) 
-                 (let-values ([(ST EN STEP) (stripe cg id st en step np)])
+                 (let-values ([(ST EN STEP) (block cg id st en step np)])
                   (for/fold (VARS ...) ([V (in-range ST EN STEP)]) body ...))])]
   [(_ cg (VARS ...) ([V (in-range st en)])      body ...) #'(CGfor/fold cg (VARS ...) ([V (in-range st en 1)]) body ...)]
   [(_ cg (VARS ...) ([V (in-range en)])         body ...) #'(CGfor/fold cg (VARS ...) ([V (in-range  0 en 1)]) body ...)]))
 
 (define-syntax-cases (CGfor/stride
   [(_ cg ([V (in-range st en step)]) body ...) 
-    #'(match cg [(CG _ 0 _) (for ([V (in-range st en step)]) body ...)]
+    #'(match cg [(CG _ (or #f 0) _) (for ([V (in-range st en step)]) body ...)]
                 [(CG id np _) (for ([V (in-range (fx+ st id) en (fx* step np))]) body ...)])]
   [(_ cg ([V (in-range st en)])      body ...) #'(CGfor cg ([V (in-range st en 1)]) body ...)]
   [(_ cg ([V (in-range en)])         body ...) #'(CGfor cg ([V (in-range  0 en 1)]) body ...)]))
@@ -131,7 +132,7 @@
 
 (define-syntax-rule (CGpipeline cg k body ...)
   (match cg
-    [(CG _ 0 _) body ...]
+    [(CG _ (or #f 0) _) body ...]
     [(CG id np pls) 
 ;      (unless (and (= k 10) (= id 0))
 ;        (define idx (if (= id 0) (sub1 np) 0))
@@ -147,7 +148,7 @@
 
 (define-syntax-rule (CGSerial cg body ...)
   (match cg
-    [(CG _ 0 _) body ...]
+    [(CG _ (or #f 0) _) body ...]
     [(CG (and 0 id) np (list-rest _ pls))
      body ... 
      (for ([ch pls]) (place-channel-send ch 2)
@@ -159,5 +160,52 @@
 
 (define-syntax-rule (CG-Parallel-Only cg body ...)
   (match cg
-    [(CG _ 0 _) (void)]
+    [(CG _ (or #f 0) _) (void)]
     [else body ...])) 
+
+(define-syntax-rule (capture-stdout-bytes body ...)
+  (let ([str-port (open-output-bytes)])
+    (parameterize ([current-output-port str-port])
+      body ...)
+
+  (get-output-bytes str-port)))
+
+(define-syntax-rule
+  (fork-join NP (params ...) (args ...) body ...)
+  (match NP
+    [#f  ;;;sequential
+     (define (do-work params ...) body ...)
+     (do-work (CGSingle) args ...)]
+    [else  ;;;parallel
+     (define pds
+       (for/list ([i (in-range 1 NP)])
+         (place/anon (ch)
+           (define (do-work params ...) body ...)
+           (match (place-channel-recv ch)
+             [(list-rest id np pds rargs)
+              (place-channel-send
+               ch
+               (apply do-work
+                (make-CG id np (cons ch pds))
+                rargs))]))))
+
+     (for ([i (in-range 1 NP)] [ch pds])
+       (place-channel-send
+        ch
+        (list i NP pds args ...)))
+
+     (define p0-result
+       ((lambda (params ...) body ...)
+        (make-CG 0 NP (cons #f pds))
+        args ...))
+
+     (define v (make-vector NP 0))
+
+     (vector-set! v 0 p0-result)
+
+     (for ([i (in-range 1 NP)] [ch pds])
+       (define r (place-channel-recv ch))
+       (vector-set! v i r))
+
+     v]))
+

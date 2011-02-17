@@ -30,9 +30,9 @@
   (case CLASS 
     [(#\S) (values  12  0.5    50)]
     [(#\W) (values  33  0.0015 300)]
-    [(#\A) (values  64  2      250)]
-    [(#\B) (values  102 2      250)]
-    [(#\C) (values  250 2      250)]
+    [(#\A) (values  64  2.0    250)]
+    [(#\B) (values  102 2.0    250)]
+    [(#\C) (values  250 2.0    250)]
     [else (raise "Unknown class")]))
 
  (define ce (flvector 
