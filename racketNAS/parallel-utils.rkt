@@ -27,12 +27,12 @@
 (define-syntax-case (place/anon (ch) body ...)
  (with-syntax ([interal-def-name
                 (syntax-local-lift-expression #'(lambda (ch) body ...))]
-               [funcname #'OBSCURE_FUNC_NAME_%#%])
+               [funcname #'(generate-temporary 'place-anon)])
   (syntax-local-lift-provide #'(rename interal-def-name funcname))
   #'(let ([module-path (resolved-module-path-name
           (variable-reference->resolved-module-path
            (#%variable-reference)))])
-   (place module-path (quote funcname)))))
+   (dynamic-place module-path (quote funcname)))))
 
 (define-syntax-rule (!or= x b ...)
   (not (ormap (lambda (y) (fx= x y)) (list b ...))))
@@ -58,19 +58,19 @@
 
 (define (CG-0-send cg)
   (match cg
-    [(CG 0  np (list-rest _ pls)) (for ([ch pls]) (place-channel-send ch 0))]
-    [(CG id np (list-rest ch  _)) (place-channel-recv ch)]))
+    [(CG 0  np (list-rest _ pls)) (for ([ch pls]) (place-channel-put ch 0))]
+    [(CG id np (list-rest ch  _)) (place-channel-get ch)]))
 
-(define (CG-0-recv cg)
+(define (CG-0-receive cg)
   (match cg
-    [(CG 0  np (list-rest _ pls)) (for ([ch pls]) (place-channel-recv ch))]
-    [(CG id np (list-rest ch  _)) (place-channel-send ch 1)]))
+    [(CG 0  np (list-rest _ pls)) (for ([ch pls]) (place-channel-get ch))]
+    [(CG id np (list-rest ch  _)) (place-channel-put ch 1)]))
 
 (define (CG-B cg)
   (match cg
     [(CG _ (or #f 0) _) (void)]
     [else
-      (CG-0-recv cg)
+      (CG-0-receive cg)
       (CG-0-send cg)]))
 
 (define (CGSingle) (make-CG 0 0 #f))
@@ -81,14 +81,14 @@
     [0 (func (CGSingle) args ...)]
     [np 
       (define pls (for/list ([i (in-range 1 np)])
-        (place/anon (ch)
-          (match (place-channel-recv ch)
+        (place ch
+          (match (place-channel-get ch)
             [(list-rest id np pls rargs)
               (apply func (make-CG id np (cons ch pls)) rargs)]))))
 
       (for ([i (in-range 1 np)]
             [ch pls])
-        (place-channel-send ch (list i np pls args ...))) 
+        (place-channel-put ch (list i np pls args ...))) 
 
       (func (make-CG 0 np (cons #f pls)) args ...)]))
 
@@ -96,7 +96,7 @@
   (match cg
     [(CG _ (or #f 0) _) body ...]
     [(CG id _ _) 
-      (CG-0-recv cg)
+      (CG-0-receive cg)
       (when (= id 0)
         body ...)
       (CG-0-send cg)]))
@@ -136,27 +136,27 @@
     [(CG id np pls) 
 ;      (unless (and (= k 10) (= id 0))
 ;        (define idx (if (= id 0) (sub1 np) 0))
-;        (match (place-channel-recv (list-ref pls idx))
+;        (match (place-channel-get (list-ref pls idx))
       (unless (= id 0)
-        (match (place-channel-recv (car pls))
+        (match (place-channel-get (car pls))
           [(list sid sk srid) (void)])) ;(printf "ME: ~a S: ~a K: ~a SK:~a ~a\n" id sid k sk srid)]))
       body ...
 ;      (unless (and (= k 1) (= id (sub1 np)))
 ;        (define idx (if (= id (sub1 np)) 0 (add1 id))) 
-;        (place-channel-send (list-ref pls idx) (list id k idx)))]))
-      (unless (= id (sub1 np)) (place-channel-send (list-ref pls (add1 id)) (list id k (add1 id))))]))
+;        (place-channel-put (list-ref pls idx) (list id k idx)))]))
+      (unless (= id (sub1 np)) (place-channel-put (list-ref pls (add1 id)) (list id k (add1 id))))]))
 
 (define-syntax-rule (CGSerial cg body ...)
   (match cg
     [(CG _ (or #f 0) _) body ...]
     [(CG (and 0 id) np (list-rest _ pls))
      body ... 
-     (for ([ch pls]) (place-channel-send ch 2)
-                     (place-channel-recv ch))]
+     (for ([ch pls]) (place-channel-put ch 2)
+                     (place-channel-get ch))]
     [(CG id np (list-rest ch _)) 
-      (place-channel-recv ch)
+      (place-channel-get ch)
       body ...
-       (place-channel-send ch 3)]))
+       (place-channel-put ch 3)]))
 
 (define-syntax-rule (CG-Parallel-Only cg body ...)
   (match cg
@@ -181,16 +181,16 @@
        (for/list ([i (in-range 1 NP)])
          (place/anon (ch)
            (define (do-work params ...) body ...)
-           (match (place-channel-recv ch)
+           (match (place-channel-get ch)
              [(list-rest id np pds rargs)
-              (place-channel-send
+              (place-channel-put
                ch
                (apply do-work
                 (make-CG id np (cons ch pds))
                 rargs))]))))
 
      (for ([i (in-range 1 NP)] [ch pds])
-       (place-channel-send
+       (place-channel-put
         ch
         (list i NP pds args ...)))
 
@@ -204,7 +204,7 @@
      (vector-set! v 0 p0-result)
 
      (for ([i (in-range 1 NP)] [ch pds])
-       (define r (place-channel-recv ch))
+       (define r (place-channel-get ch))
        (vector-set! v i r))
 
      v]))

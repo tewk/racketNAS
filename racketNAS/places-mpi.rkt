@@ -64,11 +64,11 @@
   (define chs (build-hypercube-channels cnt))
   (for ([i (in-range 1 cnt)]
         [pl places])
-    (place-channel-send pl (list i cnt (vector-ref chs i))))
+    (place-channel-put pl (list i cnt (vector-ref chs i))))
   (make-comgrp 0 cnt (vector-ref chs 0)))
 
 (define (receive-hypercube-comgrp ch)
-  (apply make-comgrp (place-channel-recv ch)))
+  (apply make-comgrp (place-channel-get ch)))
 
 (define (comgrp-append-id comgrp v)
   (string-append v (number->string (comgrp-id comgrp))))
@@ -85,8 +85,8 @@
           (match p 
             [(list peerid pch) 
               (if (peerid . > . id)
-                (begin (place-channel-send pch v) v)
-                (place-channel-recv pch))])))]
+                (begin (place-channel-put pch v) v)
+                (place-channel-get pch))])))]
     [(comgrp) (broadcast comgrp (mkerror comgrp))]))
 
 (define scatter
@@ -103,8 +103,8 @@
                          [possible (subtree-size peerid)]
                          [split-point (/ (min left possible) (+ (min left possible) possible))])
                     (let-values ([(v1 v2) (vector-split-at v (ceiling (* split-point (vector-length v))))]) 
-                      (place-channel-send pch v2) v1)))
-                (place-channel-recv pch))])))]
+                      (place-channel-put pch v2) v1)))
+                (place-channel-get pch))])))]
     [(comgrp) (scatter comgrp (void))]))
 
 (define (reduce/vector comgrp op right-identity val)
@@ -113,8 +113,8 @@
       (match p 
         [(list peerid pch) 
           (if (peerid . < . id)
-            (begin (place-channel-send pch v) v)
-            (vector-map op (place-channel-recv pch) v))]))))
+            (begin (place-channel-put pch v) v)
+            (vector-map op (place-channel-get pch) v))]))))
 
 (define-syntax-rule (values->list body ...)
   (call-with-values (lambda () body ...) list))
