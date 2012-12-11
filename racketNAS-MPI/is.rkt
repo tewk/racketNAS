@@ -20,7 +20,7 @@
     [(_ name val)
      (begin (provide name)
             (define name val))]))
-
+#;
 (require (only-in racket [vector-ref vr] [vector-set! vs!])
                  
          (rename-in racket/fixnum [fxvector-ref fxr] [fxvector-set! fx!])
@@ -28,16 +28,20 @@
          racket/fixnum)
 
 ;; unsafe ones
-#;
+
 (require (rename-in racket/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
+                    [unsafe-flvector-ref flr] 
+                    [unsafe-flvector-set! fl!]
                     [unsafe-fxvector-ref fxr] 
                     [unsafe-fxvector-set! fx!]
                     [unsafe-fx+ fx+]
                     [unsafe-fx- fx-]
                     [unsafe-fx= fx=]
-                    [unsafe-fx<= fx<=]))
+                    [unsafe-fx<= fx<=])
+
+         (only-in racket/fixnum fxvector in-fxvector make-fxvector))
 
 (provide main)
 
@@ -101,7 +105,7 @@
             (finish t1 t2)])])))
 
 (define (create-seq seed a max-key num-keys key-array)
-  (define k (/ max-key 4))
+  (define k (quotient max-key 4))
   (for/fold ([seed seed])
             ([i num-keys])
     (let-values ([(seed x) (for/fold ([seed seed]
@@ -229,8 +233,8 @@
     (for ([i (in-range j)])
       (fx++! key-buff1 (fx- (fxr key-buff2 i) min-key-val)))
 
-    (for/fold ([prev (fxr key-buff1 min-key-val)])
-              ([i (in-range (fx+ min-key-val 1) (fx+ max-key-val 1))])
+    (for/fold ([prev (fxr key-buff1 0)])
+              ([i (in-range 1 (fx+ (fx- max-key-val min-key-val) 1))])
       (define nprev (fx+ (fxr key-buff1 i) prev))
       (fx! key-buff1 i nprev)
       nprev)
@@ -253,7 +257,7 @@
                     [th (fx+ (fxr test-rank-array i) offset)])
                 (cond
                   [(not (= mh th))
-                   (printf "Failed partial verification: iteration ~a, processor ~a test key ~a ~a ~a~n" iteration id i mh th)
+                   (printf "Failed partial verification: iteration ~a, processor ~a test key ~a ~a ~a ~a ~a ~a~n" iteration id i k min-key-val (- k 1 min-key-val) mh th)
                     #f]
                   [else #t])))
             #t)))
@@ -274,7 +278,9 @@
 
   (define last-local-key (if (total-local-keys . < . 1) 0 (fx- total-local-keys 1)))
 
-  (let*-values ([(k) (cond
+  (let*-values ([(k) 
+                 (if (cnt . > . 1)
+                     (cond
                        [(= id 0)
                         (rmpi-send comm (fx+ id 1) (fxr key-array last-local-key))
                         #f]
@@ -283,7 +289,8 @@
                        [else
                          (begin0
                            (rmpi-recv comm (fx- id 1))
-                           (rmpi-send comm (fx+ id 1) (fxr key-array last-local-key)))])]
+                           (rmpi-send comm (fx+ id 1) (fxr key-array last-local-key)))])
+                     (fxr key-array last-local-key)) ]
                 [(j) (if (and (id . > . 0)
                               (total-local-keys . > . 0)
                               (k . > . (fxr key-array 0)))
@@ -317,7 +324,8 @@
   (define cnt (rmpi-cnt comm))
   (define-values (test-index-array test-rank-array total-keys-log-2 max-key-log-2 num-buckets-log-2 MIN-PROCS)
     (initial-conditions class))
-  (define num-keys (arithmetic-shift 1 total-keys-log-2))
+  (define total-keys (arithmetic-shift 1 total-keys-log-2))
+  (define num-keys (quotient total-keys cnt))
   (define max-key (arithmetic-shift 1 max-key-log-2))
   (define num-buckets (arithmetic-shift 1 num-buckets-log-2))
   (define test-array-size 5)
@@ -325,10 +333,10 @@
 
   (define SIZE-OF-BUFFERS
     (cond 
-      [(cnt . <  . 256) (* 3/2 num-keys)]
-      [(cnt . <  . 512) (* 5/2 num-keys)]
+      [(cnt . <  . 256) (truncate (* 3/2 num-keys))]
+      [(cnt . <  . 512) (truncate (* 5/2 num-keys))]
       [(cnt . <  . 1024) (* 4 num-keys)]
-      [else (* 13/2 num-keys)]))
+      [else (truncate (* 13/2 num-keys))]))
 
   (define key-array (make-fxvector SIZE-OF-BUFFERS))
   (define key-buff1 (make-fxvector SIZE-OF-BUFFERS))
@@ -343,10 +351,8 @@
   (define recv-displ (make-fxvector cnt))
 
 
-  (define TOTAL-KEYS (arithmetic-shift 1 total-keys-log-2))
-  ;(define key-array (make-fxvector num-keys 0))
 
-  (create-seq (find-my-seed id cnt (* 4 TOTAL-KEYS MIN-PROCS) 314159265.00 1220703125.00)
+  (create-seq (find-my-seed id cnt (* 4 total-keys MIN-PROCS) 314159265.00 1220703125.00)
               1220703125.00
               max-key
               num-keys
@@ -365,7 +371,8 @@
 
   (do-rank 1)
 
-  (printf "Size: ~a Iterations: ~a~n" num-keys max-iterations) 
+  (when (= id 0)
+    (printf "Size: ~a Iterations: ~a~n" num-keys max-iterations))
   (when (and (= id 0) (not (eq? class #\S))) (printf "\n   iteration\n"))
 
   (timer-start 0)
@@ -384,22 +391,24 @@
   (define max-time (rmpi-reduce comm 0 max (timer-read 0)))
 
   (define (boolean-and a b) (and a b))
-
+  
+  (define partial-verified2 (rmpi-reduce comm 0 boolean-and partial-verified))
+  (define full-verified (full-verify comm id cnt min-key-val j key-array key-buff2 key-buff2))
   (define verified (and
-                     (rmpi-reduce comm 0 boolean-and (full-verify comm id cnt min-key-val j key-array key-buff2 key-buff2))
-                     partial-verified))
+                     full-verified
+                     partial-verified2))
 
   (when (= id 0)
       (print-verification-status class verified bmname)
       (let* ([tm-sec (/ (timer-read 1) 1000)]
              [results (new-BMResults "IS" 
                                       class
-                                      TOTAL-KEYS
+                                      total-keys
                                       0 
                                       0 
                                       max-iterations 
                                       (exact->inexact tm-sec)
-                                      (get-mops tm-sec max-iterations num-keys) 
+                                      (get-mops tm-sec max-iterations total-keys) 
                                       "keys ranked" 
                                       verified
                                       #f 
@@ -450,7 +459,7 @@
         #:mpi-module (quote-module-path)
         #:mpi-func 'is-place
         #:mpi-args place-args)
-      (rmpi-make-localhost-config 4 6341 'is))))
+      (rmpi-make-localhost-config num-threads 6341 'is))))
 
 (define (get-mops total-time niter num-keys)  
   (if (> total-time 0) 
