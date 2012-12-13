@@ -2,11 +2,15 @@
 (require racket/flonum)
 (provide random-init 
          randlc 
-         randlc/a 
-         randlc/2
+         ;randlc/a 
+         ;randlc/2
          vranlc 
          ipow46
          print-seed
+         krandlc/a
+         krandlc/2
+         (rename-out [krandlc/a randlc/a]
+                     [krandlc/2 randlc/2])
 
          new-rand
          power/r)
@@ -48,6 +52,14 @@
          [t4 (floor (* r46 t3))]
          [r (- t3 (* t46 t4))])
     r))
+
+(define (krandlc/a x a)
+  (exact->inexact (bitwise-and (* (inexact->exact (floor x)) (inexact->exact (floor a))) #x3FFFFFFFFFFF)))
+
+
+(define (krandlc/2 x a)
+  (define nx (krandlc/a x a))
+  (values nx (* r46 nx)))
 
 ;(define (gen-randlc ))
 (define (randlc/2 x a)
@@ -103,3 +115,17 @@
       (begin
         (set-rand-seed! rng seed)
         pow))))
+
+(module+ test
+  (time
+    (for ([i 1000000])
+      (krandlc/a 314159265.0 1220703125.0)))
+  (time
+    (for ([i 1000000])
+      (randlc/a 314159265.0 1220703125.0)))
+  (time
+    (for ([i 1000000])
+      (krandlc/2 314159265.0 1220703125.0)))
+  (time
+    (for ([i 1000000])
+      (randlc/2 314159265.0 1220703125.0))))
