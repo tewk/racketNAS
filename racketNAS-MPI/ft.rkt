@@ -55,6 +55,14 @@
         body ...)
       (timer-stop T))))
 
+(define-syntax-rule (with-timer! T body ...)
+  (begin
+    (timer-start T)
+    (begin0
+      (let ()
+        body ...)
+      (timer-stop T))))
+
 (define (get-class-size CLASS)
   (case CLASS 
     [(#\S) (values 64 64 64 6)]
@@ -408,7 +416,7 @@
 (define (->inexact x)
   (if (exact? x) (exact->inexact x) x))
 
-(define (fft_init n u)
+(define (fft-init n u)
   (define REAL 0)
   (define IMAG 1)
   (let ([nu n]
@@ -538,11 +546,11 @@
                  (fl! z (fx+ (fx* jj transblock 2) (fx* ii 2) 1))))
               ))))
 
-(define (transpose2-global xin xout)
+(define (transpose2-global xin xout commslice1)
   (with-timer T_TRANSXZGLO
-    (rmpi-alltoall COMMSLIZE! xin)))
+    (rmpi-alltoall commslice1 xin)))
 
-(define (transpose2-finish n1 n2 xin xout)
+(define (transpose2-finish n1 n2 xin xout np np2) 
   (with-timer T_TRANSXZFIN
     (for ([p np2])
       (define ioff (* p n2))
@@ -554,19 +562,21 @@
              (flr xin (fx+ (fx* i (fx* np2 2)) (fx* j np 2) (fx* p 2) 1)))
         ))))
 
-(define (transpose-x-z l1 l2 xin xout)
-  (define d0_l1 (dimsr 0 l1))
-  (define d1_l1 (dimsr 1 l1))
-  (define d2_l1 (dimsr 2 l1))
-  (define d0_l2 (dimsr 0 l2))
-  (define d1_l2 (dimsr 1 l2))
-  (define d2_l2 (dimsr 2 l2))
+(define (transpose-x-z l1 l2 xin xout dimsa)
+    (define (dimsr x y)   (fxvector-ref  dimsa (fx+ (fx* x 3) y)))
+  (define d0-l1 (dimsr 0 l1))
+  (define d1-l1 (dimsr 1 l1))
+  (define d2-l1 (dimsr 2 l1))
+  (define d0-l2 (dimsr 0 l2))
+  (define d1-l2 (dimsr 1 l2))
+  (define d2-l2 (dimsr 2 l2))
   (transpose-x-z-local d0-l1 d1-l1 d2-l1 xin xout)
   (transpose-x-z-global d0-l1 d1-l1 d2-l1 xin xout)
   (transpose-x-z-finish d0-l2 d1-l2 d2-l2 xin xout)
   )
 
-(define (transpose-x-z-local d1 d2 d3 xin xout)
+(define (transpose-x-z-local d1 d2 d3 xin xout transblock transblockpad maxdim)
+  (define buf (make-flvector (fx* transblockpad maxdim 2)))
   (with-timer T_TRANSXZLOC
     (cond
       [(or (< d1 32) (= d3 1))
@@ -581,20 +591,20 @@
       [else
         (define block3 (if (> d3 transblock) transblock d3))
         (define block1 (if (> (fx* d1 block3) (fx* transblock transblock))
-                           (fl/ (fx* transblock transbloc) block3)
+                           (fl/ (fx* transblock transblock) block3)
                            d1))
         (for* ([j d2]
                [kk (in-range 0 (fx- d3 block3) block3)]
                [ii (in-range 0 (fx- d1 block1) block1)])
               (for ([k block3])
-                (define k1 = (fx+ k kk))
+                (define k1 (fx+ k kk))
                 (for ([i block1])
                   (define idx1 (fx+ (fx* k maxdim 2) (fx* i 2)))
                   (define idx2 (fx+ (fx* (fx+ i ii) d2 d3 2) (fx* j d3 2) (fx* k1 2)))
                   (fl! buf idx1 (flr xin idx2))
                   (fl! buf (fx+ idx1 1) (flr xin (fx+ idx2 1)))))
               (for ([i block1])
-                (define i1 = (fx+ i ii))
+                (define i1 (fx+ i ii))
                 (for ([k block3])
                   (define idx1 (fx+ (fx* k maxdim 2) (fx* i 2)))
                   (define idx2 (fx+ (fx* (fx+ k kk) d2 d1 2) (fx* j d1 2) (fx* i1 2)))
@@ -602,36 +612,37 @@
                   (fl! xout (fx+ idx2 1) (flr buf (fx+ idx1 1)))))
               )])))
 
-(define (transpose-x-z-global xin xout)
+(define (transpose-x-z-global xin xout commslice1)
   (with-timer T_TRANSXZGLO
-    (rmpi-alltoall COMMSLIZE! xin)))
+    (rmpi-alltoall commslice1 xin)))
 
-(define (transpose-x-z-finish n1 n2 xin xout)
+(define (transpose-x-z-finish n1 n2 xin xout np2 d1 d2 d3)
   (with-timer T_TRANSXZFIN
     (for ([p np2])
       (define ioff (fx/ (fx* p d1) np2))
       (for* ([k d3]
-             [j d2])
-             [i (fx/ d1 np2)]
+             [j d2]
+             [i (fx/ d1 np2)])
         (define idx1 (fx+ (fx* i d2 d3 np2 2) (fx* j d3 np2 2) (fx* k np2 2) (fx* p 2)))
         (define idx2 (fx+ (fx* (fx+ i ioff) d2 d3 2) (fx* j d3 2) (fx* k 2)))
         (fl! xout idx2 (flr xin idx1))
         (fl! xout (fx+ idx2 1) (flr xin (fx+ idx1 1)))))))
 
-(define (transpose-x-y l1 l2 xin xout)
-  (define d0_l1 (dimsr 0 l1))
-  (define d1_l1 (dimsr 1 l1))
-  (define d2_l1 (dimsr 2 l1))
-  (define d0_l2 (dimsr 0 l2))
-  (define d1_l2 (dimsr 1 l2))
-  (define d2_l2 (dimsr 2 l2))
+(define (transpose-x-y l1 l2 xin xout dimsa)
+    (define (dimsr x y)   (fxvector-ref  dimsa (fx+ (fx* x 3) y)))
+  (define d0-l1 (dimsr 0 l1))
+  (define d1-l1 (dimsr 1 l1))
+  (define d2-l1 (dimsr 2 l1))
+  (define d0-l2 (dimsr 0 l2))
+  (define d1-l2 (dimsr 1 l2))
+  (define d2-l2 (dimsr 2 l2))
   (transpose-x-y-local d0-l1 d1-l1 d2-l1 xin xout)
   (transpose-x-y-global d0-l1 d1-l1 d2-l1 xin xout)
   (transpose-x-y-finish d0-l2 d1-l2 d2-l2 xin xout)
   )
 
 (define (transpose-x-y-local d1 d2 d3 xin xout)
-  (with-timers T_TRANSXYLOC
+  (with-timer T_TRANSXYLOC
     (for* ([k d3]
            [i d1]
            [j d2])
@@ -641,24 +652,24 @@
       (fl! xout (fx+ idx2 1) (flr xin (fx+ idx1 1)))
       )))
 
-(define (transpose-x-y-global xin xout)
+(define (transpose-x-y-global xin xout commslice2)
   (with-timer T_TRANSXYGLO
-    (rmpi-alltoall COMMSLICE2 xin)))
+    (rmpi-alltoall commslice2 xin)))
 
-(define (transpose-x-y-finish n1 n2 xin xout)
+(define (transpose-x-y-finish n1 n2 xin xout np1 d1 d2 d3)
   (with-timer T_TRANSXYFIN
     (for ([p np1])
       (define ioff (fx/ (fx* p d1) np1))
       (for* ([k d3]
-             [j d2])
+             [j d2]
              [i (fx/ d1 np1)])
         (define idx1 (fx+ (fx* i d2 d2 np1 2) (fx* k d2 np1 2) (fx* j np1 2) (fx* p 2)))
         (define idx2 (fx+ (fx* (fx+ i ioff) d2 d3 2) (fx* j d3 2) (fx* k 2)))
         (fl! xout idx2 (flr xin idx1))
-        (fl! xout (fx+ idx2 1) (flr xin (fx+ idx1 1))))))
+        (fl! xout (fx+ idx2 1) (flr xin (fx+ idx1 1)))))))
 
 
-(define (checksum i u1 d1 d2 d3)
+(define (checksum id i sum u1 d1 d2 d3 nx ny nz xstart1 xend1 ystart1 yend1 zstart1 zend1 u ntotal-f comm)
   (define isize3 2)
   [define jsize3 (* isize3 (+ d1 1))] 
   [define ksize3 (* jsize3 d2)]
@@ -691,7 +702,7 @@
                   (fl/ csumi ntotal-f)))
 
     (define allchk
-      (with-timers T_SYCH
+      (with-timer T_SYNCH
         (rmpi-reduce comm 0 + chk)))
 
     (match-define (vector chkr chki) allchk)
@@ -702,13 +713,13 @@
       (fl! sum (fx* i 2) chkr)
       (fl! sum (fx+ (fx* i 2) 1) chki))))
 
-(define (synchup)
+(define (synchup comm)
   (with-timer T_SYNCH
     (rmpi-barrier comm)))
 
-(define (verify class niter-default chksum)
+(define (verify class niter-default cksum)
   (define cexpd
-    (case CLASS
+    (case class
        ;Class S reference values
     [(#\S) 
          #(
@@ -849,8 +860,9 @@
   (if (niter-default . <= . 0) 
     -1
     (for/fold ([verified #t]) ([it (in-range niter-default)]) 
-      (let* ([rit2 (+ REAL (* it 2))]
-             [iit2 (+ IMAG (* it 2))]
+      (let* ([it2 (* it 2)]
+             [rit2 (+ 0 it2)]
+             [iit2 (+ 1 it2)]
              [cexpdr (vector-ref cexpd rit2)]
              [cexpdi (vector-ref cexpd iit2)]
              [csumr (/ (- (flr cksum rit2) cexpdr) cexpdr)] 
@@ -871,6 +883,7 @@
   (define id (rmpi-id comm))
   (define cnt (rmpi-cnt comm))
   (define-values (nx ny nz niter) (get-class-size class))
+  (define dimsa (make-fxvector 9))
   (define xstart (make-fxvector 3))
   (define ystart (make-fxvector 3))
   (define zstart (make-fxvector 3))
@@ -886,6 +899,8 @@
   (define twiddle (make-flvector ntdivnp))
 
   (timer-start T_INIT)
+  (define (dimsr x y)   (fxvector-ref  dimsa (fx+ (fx* x 3) y)))
+  (define ntotal-f (* nx ny nz 1.0))
   (define-values (np1 np2 me1 me2 layout-type fftblock fftblockpad) (setup xstart ystart zstart xend yend zend dimsa))
   (compute-indexmap twiddle (dimsr 0 2) (dimsr 1 2) (dimsr 2 2))
   (compute-initial-conditions u1 (dimsr 0 0) (dimsr 1 0) (dimsr 2 0))
@@ -913,11 +928,11 @@
       (with-timer T_FFT
         (fft -1 u1 u2))
       (with-timer T_CHECKSUM
-        (checksum i i2 (dimsr 0 0) (dims 1 0) (dims 2 0)))))
+        (checksum i u2 (dimsr 0 0) (dims 1 0) (dims 2 0)))))
 
   (define verified (verify nx ny nz niter class))
 
-  (define total-time timer-read T_TOTAL)
+  (define total-time (timer-read T_TOTAL))
   (define mflops
     (cond 
       [(= total-time 0.0) 0.0]
@@ -936,7 +951,7 @@
       ny
       nz
       niter
-      cnt-min
+      cnt
       cnt
       total-time
       mflops
