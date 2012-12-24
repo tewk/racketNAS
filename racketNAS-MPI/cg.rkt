@@ -306,6 +306,11 @@
   (for ([i l])
     (fl! v (fx+ o i) (flr tv i))))
 
+(define-syntax-rule (two-way id peerid send recv)
+  (cond
+    [(< id peerid) send recv]
+    [else recv send]))
+
 (define (printfl->file fn v)
   (with-output-to-file fn #:exists 'replace (lambda ()
     (for ([i (in-naturals)]
@@ -360,8 +365,9 @@
         (with-timer T_RCOMM
           (define peerid (fxr reduce-exch-proc i))
           ;(printf "T1 ~a ~a ~a ~a ~a ~a\n" id peerid (fxr reduce-send-starts i) (fxr reduce-send-lengths i) (fxr reduce-recv-starts i) (fxr reduce-recv-lengths i))
-          (rmpi-send/flvo comm peerid w (fxr reduce-send-starts i) (fxr reduce-send-lengths i))
-          (rmpi-recv/flvo comm peerid q (fxr reduce-recv-starts i) (fxr reduce-recv-lengths i)))
+          (two-way id peerid
+            (rmpi-send/flvo comm peerid w (fxr reduce-send-starts i) (fxr reduce-send-lengths i))
+            (rmpi-recv/flvo comm peerid q (fxr reduce-recv-starts i) (fxr reduce-recv-lengths i))))
         (for ([j (in-range send-start (fx+ send-start (fxr reduce-recv-lengths i)))])
           (flv+= w j (flr q j))))
 
@@ -373,8 +379,9 @@
                (for ([x send-len])
                  (fl! q (fx+1 x) (flr w (fx+ send-start x))))]
               [else
-                (rmpi-send/flvo comm exch-proc w send-start send-len)
-                (rmpi-recv/flvo comm exch-proc q 1 exch-recv-length)]
+                (two-way id exch-proc
+                  (rmpi-send/flvo comm exch-proc w send-start send-len)
+                  (rmpi-recv/flvo comm exch-proc q 1 exch-recv-length))]
                 ))
           (for ([j (in-range 1 (fx+1 exch-recv-length))])
             (fl! q j (flr w j))))
@@ -432,8 +439,10 @@
 
     (for ([i (in-range l2npcols 0 -1)])
       (with-timer T_RCOMM
-        (rmpi-send/flvo comm (fxr reduce-exch-proc i) w (fxr reduce-send-starts i) (fxr reduce-send-lengths i))
-        (rmpi-recv/flvo comm (fxr reduce-exch-proc i) r (fxr reduce-recv-starts i) (fxr reduce-recv-lengths i)))
+        (define peerid (fxr reduce-exch-proc i))
+        (two-way id peerid
+          (rmpi-send/flvo comm peerid w (fxr reduce-send-starts i) (fxr reduce-send-lengths i))
+          (rmpi-recv/flvo comm peerid r (fxr reduce-recv-starts i) (fxr reduce-recv-lengths i))))
       (for ([j (in-range send-start (fx+ send-start (fxr reduce-recv-lengths i)))])
         (flv+= w j (flr r j))))
 
@@ -445,8 +454,9 @@
                (for ([x send-len])
                  (fl! r (fx+1 x) (flr w (fx+ send-start x))))]
               [else
-         (rmpi-send/flvo comm exch-proc w send-start send-len)
-         (rmpi-recv/flvo comm exch-proc r 1 exch-recv-length)]))]
+         (two-way id exch-proc
+           (rmpi-send/flvo comm exch-proc w send-start send-len)
+           (rmpi-recv/flvo comm exch-proc r 1 exch-recv-length))]))]
       [else
         (for ([j (in-range 1 (fx+1 exch-recv-length))])
           (fl! r j (flr w j)))])
