@@ -11,7 +11,7 @@
          krandlc/2
          (rename-out [krandlc/a randlc/a]
                      [krandlc/2 randlc/2])
-
+         mk-randlc
          new-rand
          power/r)
 
@@ -24,7 +24,7 @@
 (define tran 314159265.0)  ;First 9 digits of PI  
 
 ;Constants 
-(define d2m46 (expt 0.5 46)) 
+(define d2m46 (expt 0.5 46))
 (define i246m1 (- (floor (expt 2 46)) 1))
 
 (define (random-init sd) (set! seed sd))
@@ -51,6 +51,13 @@
          [t3 (+ (* t23 z) (* a2 x2))]
          [t4 (floor (* r46 t3))]
          [r (- t3 (* t46 t4))])
+    r))
+
+
+(define (mk-randlc x a)
+  (lambda ()
+    (define-values (nx r) (krandlc/2 x a))
+    (set! x nx)
     r))
 
 (define (krandlc/a x a)

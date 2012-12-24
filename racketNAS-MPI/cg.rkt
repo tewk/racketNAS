@@ -9,7 +9,8 @@
          "bm-args.rkt"
          "bm-results.rkt"
          (except-in "rand-generator.rkt" ipow46)
-         "timer.rkt")
+         "timer.rkt"
+         "print-results.rkt")
 
 ;; safe primitives
 (define-syntax define/provide
@@ -23,8 +24,10 @@
 
 (require (only-in racket [vector-ref vr] [vector-set! vs!])
                  
-         (rename-in racket/fixnum [fxvector-ref fxr] [fxvector-set! fx!] [fxquotient fx/])
-         (rename-in racket/flonum [flvector-ref flr] [flvector-set! fl!])
+         (rename-in racket/fixnum [fxvector-ref fxr] [fxvector-set! fx!] [fxquotient fx/]
+                    [fxvector-ref fxvr] [fxvector-set! fxvs!])
+         (rename-in racket/flonum [flvector-ref flr] [flvector-set! fl!]
+                    [flvector-ref flvr] [flvector-set! flvs!])
          racket/fixnum)
 
 ;; unsafe ones
@@ -45,7 +48,13 @@
 
 (provide main)
 
+(define-values (T_TOTAL T_CONJG T_RCOMM T_NCOMM T_COMP T_COMM T_LAST) (values 0 1 2 3 4 5 6))
+
 (define pi 3.141592653589793238)
+
+(define-syntax-rule (when0 x body ...)
+  (when (= 0 x)
+    body ...))
 
 (define-syntax-rule (with-timer T body ...)
   (begin
@@ -62,6 +71,18 @@
       (let ()
         body ...)
       (timer-stop T))))
+
+(define-syntax-rule (flv+= v o val)
+  (fl! v o (fl+ (flr v o) val)))
+
+(define-syntax-rule (flv-= v o val)
+  (fl! v o (fl- (flr v o) val)))
+
+(define-syntax-rule (fxvs!++ v o)
+  (fx! v o (fx+1 (fxr v o))))
+
+(define (rmpi-exit-error comm)
+  (exit -1))
 
 (define amult 1220703125.0)
 (define-syntax-rule (fx++ a) (fx+ a 1))
@@ -82,38 +103,38 @@
 (define (ilog2 x)
   (cond
     [(<= x 0) #f]
-    [(= x 1) 0]
-    [else]
+    [else
       (let loop ([x x]
                  [i 0])
         (cond 
-          [(zero? x) i]
+          [(= x 1) i]
           [(not (zero? (remainder x 2))) #f]
-          [else (loop (quotient x 2) (+ 1 i))]))))
+          [else (loop (quotient x 2) (+ 1 i))]))]))
 
-(define (ispow2 i)
+(define (ipow2 i)
   (cond
     [(< i 0) #f]
     [(= i 0) 1]
-    (let loop ([i i]
-               [x 1])
-      (cond 
-        [(zero? i) x]
-        [else (loop (- i 1) (arithmetic-shift x 1))]))))
+    [else (arithmetic-shift 1 i)]))
 
 
-(define (setup-proc-info num-procs num-proc-rows num-proc-cols)
+(define (setup-proc-info comm id nprocs num-procs num-proc-rows num-proc-cols)
   (when (not (= nprocs num-procs))
     (when0 id 
       (printf "Error: num of procs allocated ~a is not equal to compiled number of procs ~a\n" nprocs num-procs))
     (rmpi-exit-error comm))
 
-  (when (not (ispow2 num-proc-cols))
+  (when (not (ilog2 num-proc-cols))
     (when0 id 
       (printf "Error: num-proc-cols is ~a which is not a power of two\n" num-proc-cols))
     (rmpi-exit-error comm))
 
-  (define log2nprocs (ispow2 nprocs))
+  (when (not (ilog2 num-proc-rows))
+    (when0 id 
+      (printf "Error: num-proc-rows is ~a which is not a power of two\n" num-proc-rows))
+    (rmpi-exit-error comm))
+
+  (define log2nprocs (ilog2 nprocs))
   (when (not log2nprocs)
     (when0 id 
       (printf "Error: num-procs is ~a which is not a power of two\n" num-procs))
@@ -121,7 +142,8 @@
 
   (values log2nprocs num-proc-cols num-proc-rows))
 
-(define (setup-submatric-info l2npcols reduce-exch-proc reduce-send-starts redcue-send-lengths reduce-recv-starts reduce-recv-lengths)
+(define (setup-submatrix-info id naa nprows npcols reduce-exch-proc 
+                              reduce-send-starts reduce-send-lengths reduce-recv-starts reduce-recv-lengths)
 
   (define col-size 0)
   (define row-size 0)
@@ -131,8 +153,8 @@
   ;ya set (define nzz 0)
   ;ya set (define npcols 0)
   ;ya set (define nprows 0)
-  (define proc-col (fx/ id npcols))
-  (define proc-row (fx- id (fx* proc-row npcols)))
+  (define proc-row (fx/ id npcols))
+  (define proc-col (fx- id (fx* proc-row npcols)))
 
   (define firstrow 0)
   (define lastrow 0)
@@ -145,32 +167,37 @@
   (define send-len 0)
 
 
-
   (cond 
     ; npcols = 1
-    [(= (fx/ naa (fx* npcols npcols)) naa)
+    [(= (fx* (fx/ naa npcols) npcols) naa)
      (set! col-size (fx/ naa npcols))
      (set! firstcol (fx+ (fx* proc-col col-size) 1))
      (set! lastcol  (fx+ (fx- firstcol 1) col-size))
-     (set! firstrow (fx+ (fx* proc-row row-sze)) 1)
+     (set! row-size (fx/ naa nprows))
+     (set! firstrow (fx+ (fx* proc-row row-size) 1))
      (set! lastrow (fx+ (fx- firstrow 1) row-size))
+     ;(printf/f "A1 ~a ~a ~a ~a ~a ~a\n" id npcols proc-col col-size firstcol lastcol)
     ]
     [else
-      (define X (fx- naa (fx/ naa (fx* nprows nprows))))
+      (define X (fx- naa (fx* (fx/ naa nprows) nprows)))
       (cond
         [(< proc-row X)
+         (printf/f "~a (< proc-row X)\n" id)
          (set! row-size (fx+ (fx/ naa nprows) 1))
          (set! firstrow (fx+ (fx* proc-row row-size) 1))
          (set! lastrow  (fx+ (fx- firstrow 1) row-size))]
         [else
+         (printf/f "~a NOT (< proc-row X)\n" id)
          (set! row-size (fx/ naa nprows))
-         (set! firstrow (fx+ (fx* X (fx+ row-size 1))
-                             (fx* (fx- proc-row X) row-size)
+         (set! firstrow (fx+ (fx+ (fx* X (fx+ row-size 1))
+                                  (fx* (fx- proc-row X) row-size))
                              1))
          (set! lastrow  (fx+ (fx- firstrow 1) row-size))])
 
       (cond
         [(= npcols nprows)
+         (printf/f "~a (= npcols nprows)\n" id)
+         (define X (fx- naa (fx* (fx/ naa npcols) npcols)))
          (cond
            [(< proc-col X)
             (set! col-size (fx+ (fx/ naa npcols) 1))
@@ -178,12 +205,38 @@
             (set! lastcol  (fx+ (fx- firstcol 1) col-size))]
            [else
             (set! col-size (fx/ naa npcols))
-            (set! firstcol (fx+ (fx* X (fx+ col-size 1))
-                                (fx* (fx- proc-col X) col-size)
+            (set! firstcol (fx+ (fx+ (fx* X (fx+ col-size 1))
+                                     (fx* (fx- proc-col X) col-size))
                                 1))
-            (set! lastcol  (fx+ (fx- firstcol 1) col-size))])
+            (set! lastcol  (fx+ (fx- firstcol 1) col-size))])]
          [else
-           (error "NOT IMPLEMENTED (= npcols nprows) must be true")]
+          (printf/f "~a NOT (= npcols nprows)\n" id)
+           (define npcols/2 (fx/ npcols 2))
+           (define proc-col/2 (fx/ proc-col 2))
+           (define X (fx- naa (fx* (fx/ naa npcols/2) npcols/2)))
+           (cond
+             [(< (fx/ proc-col 2) X)
+              (printf/f "~a (< (/ proc-col 2) X)\n" id)
+              (set! col-size (fx+ (fx/ naa npcols/2) 1))
+              (set! firstcol (fx+ (fx* proc-col/2 col-size) 1))
+              (set! lastcol (fx+ (fx- firstcol 1) col-size))
+              ]
+             [else
+              (printf/f "~a NOT (< (/ proc-col 2) X)\n" id)
+              (set! col-size (fx/ naa npcols/2))
+              (set! firstcol (fx+ (fx+ (fx* X (fx+ col-size 1))
+                                       (fx* (fx- proc-col/2 X) col-size))
+                                  1))
+              (set! lastcol (fx+ (fx- firstcol 1) col-size))
+              (printf/f "~a ~a ~a ~a ~a ~a\n" id npcols proc-col col-size firstcol lastcol)
+               ])
+           (cond
+             [(= (modulo id 2) 0)
+              (set! lastcol (fx+ (fx+ (fx- firstcol 1) (fx/ (fx- col-size 1) 2)) 1))]
+             [else
+              (set! firstcol (fx+ (fx+ firstcol (fx/ (fx- col-size 1) 2)) 1))
+              (set! lastcol (fx+ (fx- firstcol 1) (fx/ col-size 2)))
+               ])
            ])])
 
   (cond
@@ -191,14 +244,24 @@
      (set! send-start 1)
      (set! send-len (fx+ (fx- lastrow firstrow) 1))]
     [else
-      (error "NOT IMPLEMENTED (= npcols nprows) must be true")])
-
+     (cond
+       [(= (modulo id 2) 0)
+        (set! send-start 1)
+        (set! send-len (fx/ (fx+ 1 (fx+ (fx- lastrow firstrow) 1)) 2))]
+       [else
+        (set! send-start (fx+ (fx/ (fx+ 1 (fx+ (fx- lastrow firstrow) 1)) 2) 1))
+        (set! send-len (fx/ (fx+ (fx- lastrow firstrow) 1) 2))
+         ])])
   
   (cond
     [(= npcols nprows)
-     (set! exch-proc ((fx* (modulo d nprows) nprows) (fx/ id nprows)))]
+     (set! exch-proc (fx+ (fx* (modulo id nprows) nprows) (fx/ id nprows)))]
     [else
-      (error "NOT IMPLEMENTED (= npcols nprows) must be true")])
+      (define id/2 (fx/ id 2))
+     (set! exch-proc (fx+ (fx* (fx+ (fx* (modulo id/2 nprows) nprows) 
+                                    (fx/ id/2 nprows))
+                               2)
+                          (modulo id 2)))])
 
   (define l2npcols (ilog2 npcols))
 
@@ -215,10 +278,23 @@
        (fx! reduce-send-lengths i send-len)
        (fx! reduce-recv-lengths i (fx+ (fx- lastrow firstrow) 1))]
       [else
-        (error "NOT IMPLEMENTED (= npcols nprows) must be true")])
-    (fx! reduce-recv-length (fx+ (fx- lastcol firstcol) 1)))
+       (fx! reduce-recv-lengths i send-len)
+       (cond
+         [(= i l2npcols)
+          (fx! reduce-send-lengths i (fx- (fx+ (fx- lastrow firstrow) 1) send-len))
+          (cond
+            [(= (fx* (fx/ id 2) 2) id)
+              (fx! reduce-send-starts i (fx+ send-start send-len))]
+            [else
+              (fx! reduce-send-starts i 1)])]
+         [else
+           (fx! reduce-send-lengths i send-len)
+           (fx! reduce-send-starts i send-start)])])
+    (fx! reduce-recv-starts i send-start))
 
   (set! exch-recv-length (fx+ (fx- lastcol firstcol) 1))
+
+  (values l2npcols firstrow lastrow firstcol lastcol exch-proc exch-recv-length send-start send-len)
 )
 
 (define (rmpi-send/flvo comm peer v o l)
@@ -226,12 +302,25 @@
 
 (define (rmpi-recv/flvo comm peer v o l)
   (define tv (rmpi-recv comm peer))
+  ;(printf "RECV ~a ~a ~a\n" (flvector-length tv) l o)
   (for ([i l])
     (fl! v (fx+ o i) (flr tv i))))
 
-(define (conj-grad colidx rowstr x z a p q r w rnorm lp2ncols
+(define (printfl->file fn v)
+  (with-output-to-file fn #:exists 'replace (lambda ()
+    (for ([i (in-naturals)]
+          [x (in-flvector v)])
+      (printf "~a ~a\n" 
+              (~r i #:min-width 12) 
+              (~r x #:precision 16 #:notation 'exponential)))))
+  )
+
+(define (conj-grad id comm naa nprows npcols firstrow lastrow firstcol lastcol l2npcols
+                   colidx rowstr x z a p q r w 
                    reduce-exch-proc reduce-send-starts reduce-send-lengths
-                   reduce-recv-starts reduce-recv-lengths)
+                   reduce-recv-starts reduce-recv-lengths
+                   exch-proc exch-recv-length send-start send-len)
+  (define cgitmax 25)
   (with-timer T_CONJG
     (for ([j (in-range 1 (fx+ 1 (fx/ naa nprows)))])
       (define xj (flr x j))
@@ -241,36 +330,52 @@
       (fl! p j xj)
       (fl! w j 0.0))
 
-    (define sum (for/fold ([sum 0.0]) ([j (in-range 1 (fx+ (fx- lastcol firstcol) 2))])
-      (define rj (flr r j))
-      (fl+ sum (fl* rj rj))))
-
     (define rho
       (with-timer T_RCOMM
-        (for/fold ([sum sum]) ([i (in-range 1 (fx+1 l2npcols))])
-          (define peerid (fxr reducde-exch-proc i))
+        (for/fold ([sum (for/fold ([sum 0.0]) ([j (in-range 1 (fx+ (fx- lastcol firstcol) 2))])
+                          (define rj (flr r j))
+                          (fl+ sum (fl* rj rj)))]) 
+                  ([i (in-range 1 (fx+1 l2npcols))])
+          (printf "R ~a ~a ~a\n" id i sum)
+          (define peerid (fxr reduce-exch-proc i))
           (rmpi-send comm peerid sum)
           (fl+ sum (rmpi-recv comm peerid)))))
+    ;(printf "RHO ~a ~a\n" id rho)
+    #;(when (= id 0)
+      (printfl->file "A.dat" a))
 
     (for/fold ([rho rho]) ([cgit (in-range cgitmax)])
+      #;(when (= id 0)
+      (for ([i (in-naturals)]
+            [x (in-flvector a)])
+        (printf "~a ~a\n" i x)))
       ;q = a * p
       (for ([j (in-range 1 (fx+ (fx- lastrow firstrow) 2))])
         (flvs! w j (for/fold ([sum 0.0]) ([k (in-range (fxvr rowstr j) (fxvr rowstr (fx++ j)))])
-                    (fl+ sum (fl* (flvr a k) (flvr p (fxvr colidx k)))))))
+                    (fl+ sum (fl* (flvr a k) (flvr p (fxvr colidx k))))))
+        ;(printf "WJ ~a ~a ~a\n" id j (flvr w j))
+        )
+        
       (for ([i (in-range 1 (fx+1 l2npcols))])
         (with-timer T_RCOMM
-          (define peerid (fxr reducde-exch-proc i))
+          (define peerid (fxr reduce-exch-proc i))
           (rmpi-send comm peerid (flr w (fxr reduce-send-starts i)))
           (fl! q (fxr reduce-recv-starts i) (rmpi-recv comm peerid)))
         (for ([j (in-range send-start (fx+ send-start (fxr reduce-recv-lengths i)))])
-          (flv+ w j (flr q j))))
+          (flv+= w j (flr q j))))
 
       ;Exchange piece of q with transpose processor:
       (if (not (fx= l2npcols 0))
           (with-timer T_RCOMM
-            (rmpi-send comm exch-proc (fx-subvec w send-start send-length))
-            (rmpi-recv/flvo comm exch-proc q 0 exch-recv-length ))
-          (for ([j 1 (fx+1 exch-recv-length)])
+            (cond 
+              [(= exch-proc id)
+               (for ([x send-len])
+                 (fl! q x (flr w (fx+ send-start x))))]
+              [else
+                (rmpi-send/flvo comm exch-proc w send-start send-len)
+                (rmpi-recv/flvo comm exch-proc q 0 exch-recv-length)]
+                ))
+          (for ([j (in-range 1 (fx+1 exch-recv-length))])
             (fl! q j (flr w j))))
 
       ;clear w for reuse
@@ -279,40 +384,46 @@
         (fl! w j 0.0))
 
       ;obtain p * q
-      (define alpha (fl/ rho
+      (define d
         (for/fold ([sum (for/fold ([sum 0.0]) ([j (in-range 1  (fx+ (fx- lastcol firstcol) 2))])
-                          (fl+ sum (fl* (flrp j) (flr q j))))])
-                  ([i (in-range 1 (fx+1 l2npcls))])
+                          (fl+ sum (fl* (flr p j) (flr q j))))])
+                  ([i (in-range 1 (fx+1 l2npcols))])
 
           (fl+ 
             sum
             (with-timer T_RCOMM
               (rmpi-send comm (fxr reduce-exch-proc i) sum)
-              (rmpi-recv comm (fxr reduce-exch-proc i)))))))
+              (rmpi-recv comm (fxr reduce-exch-proc i))))))
+
+      (define alpha (fl/ rho d))
+      (printf "ALPHA ~a ~a ~a ~a\n" id alpha d rho)
 
       (define rho0 rho)
 
       ;z = z + (alpha * p)
       ;r = r - (alpha * q)
-      (for ([j (in-range 1 (fx+ (fx- lastcol firstcl) 2))])
-        (fl+= z j (fl* alpha (flv p j)))
-        (fl-= r j (fl* alpha (flv q j))))
+      (for ([j (in-range 1 (fx+ (fx- lastcol firstcol) 2))])
+        (flv+= z j (fl* alpha (flr p j)))
+        (flv-= r j (fl* alpha (flr q j))))
 
       ;rho = r.r
-      (define rho
+      (define rhon
         (for/fold ([sum (for/fold ([sum 0.0]) ([j (fx+ (fx- lastcol firstcol) 2)])
                           (define rj (flr r j))
-                          (fl+ (fl* rj rj)))])
+                          (fl+ sum (fl* rj rj)))])
+                  ([i (in-range 1 (fx+1 l2npcols))])
           (fl+
             sum
             (with-timer T_RCOMM
               (rmpi-send comm (fxr reduce-exch-proc i) sum)
               (rmpi-recv comm (fxr reduce-exch-proc i))))))
 
-      (define beta (fl/ rho rho0))
+      (define beta (fl/ rhon rho0))
 
       (for ([j (in-range 1 (fx+ (fx- lastcol firstcol) 2))])
-        (fl! p j (fl+ (flr r j) (fl* beta (flr p j))))))
+        (fl! p j (fl+ (flr r j) (fl* beta (flr p j)))))
+      
+      rhon)
 
     (for ([j (in-range 1 (fx+ (fx- lastrow firstrow) 2))])
       (fl! w j (for/fold ([sum 0.0]) ([k (in-range (fxr rowstr j) (fxr rowstr (fx+1 j)))])
@@ -323,87 +434,38 @@
         (rmpi-send/flvo comm (fxr reduce-exch-proc i) w (fxr reduce-send-starts i) (fxr reduce-send-lengths i))
         (rmpi-recv/flvo comm (fxr reduce-exch-proc i) r (fxr reduce-recv-starts i) (fxr reduce-recv-lengths i)))
       (for ([j (in-range send-start (fx+ send-start (fxr reduce-recv-lengths i)))])
-        (fl+= w j (flr r j))))
+        (flv+= w j (flr r j))))
 
     (cond
       [(not (= l2npcols 0))
        (with-timer T_RCOMM
+            (cond 
+              [(= exch-proc id)
+               (for ([x send-len])
+                 (fl! r x (flr w (fx+ send-start x))))]
+              [else
          (rmpi-send/flvo comm exch-proc w send-start send-len)
-         (rmpi-recv/flvo comm exhc-proc r 0 exch-recv-length))]
+         (rmpi-recv/flvo comm exch-proc r 0 exch-recv-length)]))]
       [else
         (for ([j (in-range 1 (fx+1 exch-recv-length))])
           (fl! r j (flr w j)))])
 
+    ;rnorm
     (sqrt 
       (for/fold ([sum (for/fold ([sum 0.0]) ([j (in-range 1 (fx+ (fx- lastcol firstcol) 2))])
                         (define d (fl- (flr x j) (flr r j)))
                         (fl+ sum (fl* d d)))])
+                ([i (in-range 1 (fx+1 l2npcols))])
         (fl+
           sum
           (with-timer T_RCOMM
             (rmpi-send comm (fxr reduce-exch-proc i) sum)
-            (rmpi-recv-comm (fxr reduce-exch-proc i))))))
+            (rmpi-recv comm (fxr reduce-exch-proc i))))))
   ))
 
-(define (conj-grad nrows ncols naa shift colidx rowstr x z a p q r)
-  
-  (define rho (for/fold ([rho 0.0]) ([j (in-range 1 (fx+ 1 naa))])
-    (flvs! q j 0.0)
-    (flvs! z j 0.0)
-    (let ([xj (flvr x j)])
-      (flvs! r j xj)
-      (flvs! p j xj)
-      (fl+ rho (fl* xj xj)))))
-
-  (for/fold ([rho rho])  ([cgit (in-range cgitmax)])
-    (for ([j (in-range 1 (fx++ nrows))])
-      (flvs! q j (for/fold ([sum 0.0]) ([k (in-range (fxvr rowstr j) (fxvr rowstr (fx++ j)))])
-                  (fl+ sum (fl* (flvr a k) (flvr p (fxvr colidx k)))))))
-
-    (define d (for/fold ([d 0.0]) ([j (in-range 1 (fx++ ncols))])
-                  (fl+ d (fl* (flvr p j) (flvr q j)))))
-
-    (define alpha (fl/ rho d))
-                    
-    (for ([j (in-range 1 (fx++ ncols))])
-      (flvs!+ z j (fl* alpha (flvr p j)))
-      (flvs!- r j (fl* alpha (flvr q j))))
-
-    (define rhon (for/fold ([rho 0.0]) ([j (in-range 1 (fx++ ncols))])
-                  (let ([rj (flvr r j)])
-                    (fl+ rho (fl* rj rj)))))
-
-    (define beta (fl/ rhon rho))
-
-    (for ([j (in-range 1 (fx++ ncols))])
-      (flvs! p j (fl+ (flvr r j) (fl* beta (flvr p j)))))
-    rhon)
-
-  (for ([j (in-range 1 (fx++ nrows))])
-    (flvs! r j (for/fold ([sum 0.0]) ([k (in-range (fxvr rowstr j) (fxvr rowstr (fx++ j)))])
-                (fl+ sum (fl* (flvr a k) (flvr z (fxvr colidx k)))))))
-
-  (define rnorm (flsqrt (for/fold ([sum 0.0]) ([j (in-range 1 (fx++ ncols))])
-    (let ([xj-rj (fl- (flvr x j) (flvr r j))])
-      (fl+ sum (fl* xj-rj xj-rj))))))
-
-  (let-values ([(tnorm1 tnorm2)
-    (let-values ([(tnorm1 tnorm2)
-        (for/fold ([tnorm1 0.0]
-                   [tnorm2 0.0])
-                ([j (in-range 1 (fx++ ncols))])
-          (let ([zj (flvr z j)])
-            (values (fl+ tnorm1 (fl* (flvr x j) zj))
-                    (fl+ tnorm2 (fl* zj zj)))))])
-        (values tnorm1 (fl/ 1.0 (flsqrt tnorm2))))])
-
-    (for ([j (in-range 1 (fx++ ncols))])
-      (flvs! x j (fl* tnorm2 (flvr z j))))
-    (values rnorm (fl+ (exact->inexact shift) (fl/ 1.0 tnorm1)))))
-
-
-;I think I switched the iv and colidx vectors by accident
-(define (makea firstrow lastrow firstcol lastcol n nz a colidx rowstr nonzer rcond arow acol aelt v iv shift)
+(define (makea n nz a colidx rowstr nonzer 
+               firstrow lastrow firstcol lastcol 
+               rcond arow acol aelt v iv shift lrandlc)
   (define (warn nnza nz iouter)
     (printf "Space for matrix elements exceeded in makea~n")
     (printf "nnza, nzmax = ~a, ~a~n" nnza nz)
@@ -411,23 +473,26 @@
     (exit 0))
   (define-syntax-rule (++ v) (set! v (add1 v)))
   (define ratio (expt rcond (/ 1.0 (exact->inexact n))))
-  (define nn1 (expt 2 (ilog2 n)))
+  (define nn1 (let loop ([x 1])
+                (if (< x n)
+                  (loop (* 2 x))
+                  x)))
 
-  (for ([i (in-range 1 (add1 n))]) (fxvs! colidx (+ n i) 0))
+  (for ([i (in-range 1 (add1 n))]) (fxvs! iv (+ n i) 0))
 
   (define nnza2 0)
   (let-values ([(size nnza)
     (for/fold ([size 1.0]
                [nnza 0]) ([iouter  (in-range 1 (add1 n))])
-      (sprnvc n nn1 nonzer v iv colidx 0 colidx n)
-      (let* ([nzv (vecset n v iv nonzer iouter 0.5) ]
+      (sprnvc n nn1 nonzer v colidx iv 1 iv (add1 n) lrandlc)
+      (let* ([nzv (vecset n v colidx nonzer iouter 0.5) ]
              [nnza
         (begin 
         (for/fold ([nnza nnza]) ([ivelt (in-range 1 (add1 nzv))])
-          (define jcol (fxvr iv ivelt))
+          (define jcol (fxvr colidx ivelt))
           (let ([nnza (if (and (jcol . >= . firstcol) (jcol . <= . lastcol))
             (for/fold ([nnza nnza]) ([ivelt1 (in-range 1 (add1 nzv))])
-              (define irow (fxvr iv ivelt1))
+              (define irow (fxvr colidx ivelt1))
               (if (and (irow . >= . firstrow) (irow . <= . lastrow))
                 (let ([nnza (add1 nnza)])
                   (++ nnza2)
@@ -452,11 +517,9 @@
           (flvs! aelt nnza2 (- rcond shift))
           nnza)
         nnza))])
-      (sparse firstrow lastrow a colidx rowstr n arow acol aelt v iv 0 iv n nnza2))))
+      (sparse firstrow lastrow a colidx rowstr n arow acol aelt v iv 1 iv (add1 n) nnza2))))
 
-;(define (sparse a collidx rowstr n arow acol aelt firstrow lastrow x mark mark-offset nzloc nzloc-offset nnza)
-)
-(define (sparse firstrow lastrow a collidx rowstr n arow acol aelt x mark mark-offset nzloc nzloc-offset nnza)
+(define (sparse firstrow lastrow a colidx rowstr n arow acol aelt x mark mark-offset nzloc nzloc-offset nnza)
   (define nrows (add1 (- lastrow firstrow)))
   (for ([j (in-range 1 (fx+1 n))])
     (fxvs! rowstr j 0)
@@ -480,10 +543,8 @@
       (fxvs! colidx k (fxvr acol nza))
       (fxvs!++ rowstr j) ))
     
-  (for ([j (in-range (sub1 nrows) -1 -1)])
-    ;(let ([curval (fxvr rowstr j)])
+  (for ([j (in-range nrows 0 -1)])
       (fxvs! rowstr (add1 j) (fxvr rowstr j)))
-    ;)
   (fxvs! rowstr 1 1)
 
   (for ([i (in-range 1 (add1 n))])
@@ -525,16 +586,15 @@
           (fxvs! rowstr (add1 j) (+ nza (fxvr rowstr 1)))
           (values nza jajp1))))))
 
-      (sprnvc n nn1 nonzer v iv colidx 0 colidx n)
-(define (sprnvc n nn1 nz v iv nzloc nzloc-offset mark mark-offset)
+(define (sprnvc n nn1 nz v iv nzloc nzloc-offset mark mark-offset lrandlc)
   (let loop ([nzv 0]
              [nzrow 0])
     (if ( nzv . >= . nz )
       (for ([ii (in-range 1 (add1 nzrow))])
         (fxvs! mark (+ (fxvr nzloc (+ ii nzloc-offset)) mark-offset) 0))
-      (let* ([vecelt (randlc amult)]
-             [vecloc (randlc amult)]
-             [idx (inexact->exact (floor (fx+1 (* vecloc nn1))))])
+      (let* ([vecelt (lrandlc)]
+             [vecloc (lrandlc)]
+             [idx (inexact->exact (floor (fl+ 1.0 (* vecloc nn1))))])
         (if (and (idx . <= . n) (zero? (fxvr mark (+ idx mark-offset))))
           (let ([nzrow (add1 nzrow)]
                 [nzv (add1 nzv)])
@@ -559,66 +619,96 @@
     nzv))
 
 
-
-
 (define/provide (cg-place ch)
   (define-values (comm args tc) (rmpi-init ch))
-  (match-define (list class bmname nprocs) args)
+  (match-define (list class bmname nprocs2) args)
   (define id (rmpi-id comm))
   (define nprocs (rmpi-cnt comm))
   (define lognprocs (ilog2 nprocs))
   (when (not lognprocs)
     (when0 id
       (printf "num-threads ~a is not a power of 2\n" nprocs)
-      (rmpi-exit-error comm))
-  (define num-proc-cols (ipow2 (- lognprocs 1)))
-  (define num-proc-rows (ipow2 (- lognprocs 1)))
+      (rmpi-exit-error comm)))
+  (define-values (num-proc-cols num-proc-rows)
+    (let* ([c (fx/ lognprocs 2)]
+           [r (fx/ lognprocs 2)]
+           [c (if (not (= (+ r c) lognprocs)) (+ 1 c) c)])
+      (values (ipow2 c) (ipow2 r))))
+
   (define num-procs (* num-proc-cols num-proc-rows))
+  ;(printf/f "HERE ~a ~a ~a ~a\n" id num-proc-cols num-proc-rows num-procs)
 
   (define-values (na nonzer shift niter rcond zeta-verify-value) 
-                   (get-class-size CLASS))
+                   (get-class-size class))
 
 
   (define naa na)
   (define nz (+ (* na (fx/ (fx+1 nonzer) num-procs) (fx+1 nonzer))
                 nonzer
-                (fx/ (* na (+ nonzer 2 (fx/ num-procs 256)) num-proc-cols))))
+                (fx/ (* na (+ nonzer 2 (fx/ num-procs 256))) num-proc-cols)))
   (define nzz nz)
+  (define colidx (make-fxvector (fx+1 nz)))
+  (define rowstr (make-fxvector (fx+ na 2)))
+  (define iv (make-fxvector (fx+ (fx* na 2) 2)))
+  (define arow (make-fxvector (fx+1 nz)))
+  (define acol (make-fxvector (fx+1 nz)))
+  (define v (make-flvector (fx+ na 2)))
+  (define aelt (make-flvector (fx+1 nz)))
+  (define a (make-flvector (fx+1 nz)))
+  (define _idx (fx+ (fx/ na num-proc-rows) 3))
+  (define x (make-flvector _idx))
+  (define z (make-flvector _idx))
+  (define p (make-flvector _idx))
+  (define q (make-flvector _idx))
+  (define r (make-flvector _idx))
+  (define w (make-flvector _idx))
 
+  (define reduce-exch-proc (make-fxvector num-proc-cols))
+  (define reduce-send-starts (make-fxvector num-proc-cols))
+  (define reduce-send-lengths (make-fxvector num-proc-cols))
+  (define reduce-recv-starts (make-fxvector num-proc-cols))
+  (define reduce-recv-lengths (make-fxvector num-proc-cols))
+
+
+
+
+  (when (= id 0)
+   (printf "NAS Parallel Benchmarks 3.3 -- CG Benchmark\n")
+   (printf "Class: ~a\n" class)
+   (printf "Size: ~a\n" na)
+   (printf "Iterations: ~a\n" niter)
+   (printf "Number of active processes: ~a\n" nprocs)
+   (printf "Number of nonzeroes per row: ~a\n" nonzer)
+   (printf "Eigenvalue shift: ~a\n" shift)
+   )
+
+  ;(printf " naa ~a\n na ~a\n nz ~a\n nzz ~a\n" naa na nz nzz)
+
+  (define-values (log2nprocs npcols nprows) (setup-proc-info comm id nprocs num-procs num-proc-rows num-proc-cols))
+  ;(printf "log2nprocs ~a\n npcols ~a\n nprows ~a\n" log2nprocs npcols nprows)
+
+  (define-values (l2npcols firstrow lastrow firstcol lastcol exch-proc exch-recv-length send-start send-len)
+    (setup-submatrix-info id naa nprows npcols reduce-exch-proc
+                          reduce-send-starts
+                          reduce-send-lengths
+                          reduce-recv-starts
+                          reduce-recv-lengths))
+  ;(printf " l2npcols ~a\n firstrow ~a\n lastrow ~a\n firstcol ~a\n lastcol ~a\n exch-proc ~a\n exch-recv-length ~a\n send-start ~a\n send-len ~a\n" l2npcols firstrow lastrow firstcol lastcol exch-proc exch-recv-length send-start send-len)
 
   (define ncols (add1 (- lastcol firstcol)))
   (define nrows (add1 (- lastrow firstrow)))
-
-  (when (= id 0)
-   (printf "NAS Parallel Benchmarks 3.3 -- CG Benchmark")
-   (printf "Size: ~a" na)
-   (printf "Iterations: ~a" niter)
-   (printf "Number of active processes: ~a" nprocs)
-   (printf "Number of nonzeroes per row: ~a" nonzero)
-   (printf "Eigenvalue shift: ~a" shift)
-   )
-
-  ;(define naa aa)
-  ;(define nzz nz)
-
-  (define-values (log2nprocs npcols nprows) (setup-proc-info num-procs num-proc-rows num-proc-cols))
-
-  (setup-sumbatrix-info l2npcols reduce-exch-proc
-                        reduce-exch-starts
-                        reduce-send-starts
-                        reduce-send-lengths
-                        reduce-recv-starts
-                        reduce-recv-lengths)
 
   (for ([i T_LAST]) (timer-clear i))
 
   (define tran 314159265.0)
   (define amult 1220703125.0)
-  (define zeta (randlc tran amult))
+  (define lrandlc (mk-randlc tran amult))
+  (define zeta (lrandlc))
 
   ;Set up partition's sparse random matrix for given class size 
-  (makea naa nzz a colidx rowstr nonzer firstrow lastrow firstcol lastcol
-         rcond arow acol aelt v iv shift)
+  (makea naa nzz a colidx rowstr nonzer 
+         firstrow lastrow firstcol lastcol 
+         rcond arow acol aelt v iv shift lrandlc)
 
 
   (for* ([j (in-range 1 (fx+ (fx- lastrow firstrow) 2))]
@@ -627,11 +717,13 @@
 
   (define (cg-body its silent)
     (for ([i (in-range 1 (fx+ (fx/ na num-proc-rows) 2))]) (fl! x i 1.0))
-    (for/fold ([zeta 0.0])
+    (for/fold ([zeta 1.0])
               ([it its])
-      (conj-grad colidx rowstr x z a p q r w rnomr l2npcols
+      (define rnorm (conj-grad id comm naa nprows npcols firstrow lastrow firstcol lastcol l2npcols
+                 colidx rowstr x z a p q r w 
                  reduce-exch-proc reduce-send-starts reduce-send-lengths
-                 reduce-recv-starts reduce-recv-lengths)
+                 reduce-recv-starts reduce-recv-lengths
+                 exch-proc exch-recv-length send-start send-len))
 
 
       (let-values ([(norm-temp10 norm-temp11)
@@ -646,75 +738,88 @@
           (for/fold ([norm-temp10 norm-temp10]
                      [norm-temp11 norm-temp11])
                     ([i (in-range 1 (fx+1 l2npcols))])
-            (match-define (fl-vector norm-temp20 norm-temp21) 
+            (define _ans
               (with-timer T_NCOMM
-                (rmpi-send comm i (flvector norm-temp10 norm-temp11))
-                (rmpi-recv comm i)))
+                (rmpi-send comm (fxr reduce-exch-proc i) (flvector norm-temp10 norm-temp11))
+                (rmpi-recv comm (fxr reduce-exch-proc i))))
+            (define norm-temp20 (flvector-ref _ans 0))
+            (define norm-temp21 (flvector-ref _ans 1))
             (values (fl+ norm-temp10 norm-temp20)
                     (fl+ norm-temp11 norm-temp21)))])
            
            (define norm_temp11 (fl/ 1.00 (flsqrt norm-temp11)))
 
-           (when (and (not silent) (= id 0))
-             (define zeta (fl+ shift (fl/ 1.0 norm_temp11)))
-             (when (and)(= it 0)
-               (printf "   iteration           ||r||                 zeta\n")
-               (printf " ~a ~a ~a\n" it rnorm zeta))
-             )
+           (begin0
+             (cond 
+               [(and (not silent) (= id 0))
+                 (define zeta (+ shift (fl/ 1.0 norm-temp10)))
+                 (when (= it 0)
+                   (printf "   iteration           ||r||                 zeta\n"))
+                 (printf " ~a ~a ~a\n" it rnorm zeta)
+                 zeta]
+               [else zeta]
+               )
 
-           (for ([j (in-range 1 (fx+ (fx- lastcol firstcol) 2))])
-             (fl! x j (fx* norm_temp11 (flr z j))))))))
+             (for ([j (in-range 1 (fx+ (fx- lastcol firstcol) 2))])
+               (fl! x j (fl* norm_temp11 (flr z j)))))))))
 
-  (cg-body 1 #t) 
+  (cg-body 1 #t)
   (for ([i T_LAST]) (timer-clear i))
   (rmpi-barrier comm)
-  (with-timer 1
-    (cg-body niter #f))
+  (let ([zeta
+            (with-timer T_TOTAL 
+                        (cg-body niter #f))])
 
-  (define t (rmpi-reduce comm 0 max (read-timer 1)))
+    (define tmax (rmpi-reduce comm 0 max (timer-read 1)))
 
-  (when (= id 0)
-    (printf " Benchmark Complete\n")
-    (if (fl< (flabs (fl/ (fl- zet zeta-verify-value) zeta-verify-value)) 0.0000000001)
-        (printf " VERIFICATION SUCCESSFUL\n")
-        (printf " VERIFICATION FAILED\n"))
-    (printf " Zeta                ~a" zeta)
-    (printf " The correct zeta is ~a" zeta)
+    (when (= id 0)
+      (printf " Benchmark Complete\n")
+      (define err (flabs (fl/ (fl- zeta zeta-verify-value) zeta-verify-value)))
+      (define verified (fl< err 0.0000000001))
+      (cond
+        [(fl< err 0.0000000001)
+          (printf " VERIFICATION SUCCESSFUL\n")
+          (printf " Zeta                ~a\n" zeta)
+          (printf " Error is            ~a\n" err)
+          ]
+        [else
+          (printf " VERIFICATION FAILED\n")
+          (printf " Zeta                ~a\n" zeta)
+          (printf " The correct zeta is ~a\n" zeta-verify-value)])
 
-    (define mflops
-      (if (not (= tmax 0.0))
-          (/ (/ (* (*  2 niter na)
-                  (+ 3.0 (* nonzer (+ nonzer 1))
-                     (* 25.0 (+ 5 (* nonzer (+ nonzer 1))))
-                     3.0))
-                tmax)
-             1000000.0)
-          0.0))
+      (define mflops
+        (if (not (= tmax 0.0))
+            (/ (/ (* (*  2 niter na)
+                    (+ 3.0 (* nonzer (+ nonzer 1))
+                       (* 25.0 (+ 5 (* nonzer (+ nonzer 1))))
+                       3.0))
+                  (/ tmax 1000))
+               1000000.0)
+            0.0))
 
-    (print-results "CG" class na 0 0 niter nnodes-compiled nprocs tmax mflops
-                   "          floating point" verfied npbversion compiletime
-                   cs1 cs2 cs3 cs4 cs5 cs6 cs7))
+      (print-results-fortran "CG" class na 0 0 niter nprocs nprocs (/ tmax 1000) mflops
+                     "          floating point" verified 0.1)))
 
 
-  (define t1 (for/flvector #:length T_LAST ([i T_LAST]) (read-timer i)))
-  (fl! t1 T_CONFIG (fl- (flr t1 T_CONFIG) (flr t1 T_RCOMM)))
-  (fl! t1 T_COMM   (fl+ (flr t1 T_RCOMM) (flr t1 T_NCOMM)))
-  (fl! t1 T_COMP   (fl- (flr t1 T_TOTAL) (flr t1 T_COMM)))
+  (define t1 (for/flvector #:length T_LAST ([i T_LAST]) (timer-read i)))
+  (fl! t1 T_CONJG (fl- (flr t1 T_CONJG) (flr t1 T_RCOMM)))
+  (fl! t1 T_COMM  (fl+ (flr t1 T_RCOMM) (flr t1 T_NCOMM)))
+  (fl! t1 T_COMP  (fl- (flr t1 T_TOTAL) (flr t1 T_COMM)))
 
   (define tsum (rmpi-reduce comm 0 + t1))
   (define tming (rmpi-reduce comm 0 min t1))
   (define tmaxg (rmpi-reduce comm 0 max t1))
 
   (when (= id 0)
-    (printf " nprocs = ~a          minimum     maximum     average\n" cnt)
+    (printf " nprocs = ~a          minimum     maximum     average\n" nprocs)
     (for ([i T_LAST]
           [d '(total conjg rcomm ncomm totcomp totcomm)])
       (printf " timer ~a (~a): ~a ~a ~a\n"
               (~r (fx+ i 1) #:min-width 2)
               (~a d #:width 8)
-              (~r (flr tmin i) #:precision '(= 4) #:min-width 10)
-              (~r (flr tmax i) #:precision '(= 4) #:min-width 10)
-              (~r (/ (flr tsum i) cnt) #:precision '(= 4) #:min-width 10)
+              (~r (flr tming i) #:precision '(= 4) #:min-width 10)
+              (~r (flr tmaxg i) #:precision '(= 4) #:min-width 10)
+              (~r (/ (flr tsum i) nprocs) #:precision '(= 4) #:min-width 10)
               ))
     (printf "\n"))
           

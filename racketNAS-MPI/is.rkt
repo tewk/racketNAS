@@ -168,6 +168,7 @@
   (timer-stop T_RANK)
   (timer-start T_RCOMM)
 
+  ;(printf/f "ALLREDUCE ~a ~a\n" id iteration)
   (define bucket-size-totals (rmpi-allreduce comm fx+ bucket-size))
 
   (timer-stop T_RCOMM)
@@ -201,6 +202,7 @@
   (timer-stop T_RANK)
   (timer-start T_RCOMM)
 
+  ;(printf/f "ALLTOALL ~a ~a\n" id iteration)
   (define recv-count (rmpi-alltoall comm send-count))
 
   (fx! recv-displ 0 0)
@@ -209,8 +211,10 @@
     (fx! recv-displ i nprev)
     nprev)
 
+  ;(printf/f "ALLTOALLV ~a ~a\n" id iteration)
   (rmpi-alltoallv comm key-buff1 send-count send-displ
                   key-buff2 recv-count recv-displ)
+  ;(printf/f "DONE ALLTOALLV ~a ~a\n" id iteration)
 
   (timer-stop T_RCOMM)
   (timer-start T_RANK)
@@ -278,6 +282,7 @@
 
   (define last-local-key (if (total-local-keys . < . 1) 0 (fx- total-local-keys 1)))
 
+  ;(printf/f "VERIFY ~a\n" id)
   (let*-values ([(k) 
                  (if (cnt . > . 1)
                      (cond
@@ -388,6 +393,7 @@
 
   (timer-stop 0)
 
+  ;(printf/f "REDUCE ~a\n" id)
   (define max-time (rmpi-reduce comm 0 max (timer-read 0)))
 
   (define (boolean-and a b) (and a b))
