@@ -377,9 +377,9 @@
   (do-rank 1)
 
   (when (= id 0)
-    (printf "Size: ~a Iterations: ~a~n" num-keys max-iterations))
-  (when (and (= id 0) (not (eq? class #\S))) (printf "\n   iteration\n"))
-
+    (printf/f "Size: ~a Iterations: ~a~n" num-keys max-iterations))
+  (when (and (= id 0) (not (eq? class #\S))) (printf/f "\n   iteration\n"))
+  (timer-clear-all)
   (timer-start 0)
 
   (define-values (partial-verified min-key-val j)
@@ -387,7 +387,7 @@
                [min-key-val 0]
                [j 0]) 
               ([iteration (in-range 1 (add1 max-iterations))])
-      (when (and (= id 0) (not (eq? class #\S))) (printf "        ~a\n" iteration))
+      (when (and (= id 0) (not (eq? class #\S))) (printf/f "        ~a\n" iteration))
       (define-values (lpv lmkv lj) (do-rank iteration))
       (values (and partial-verified lpv) lmkv j)))
 
@@ -406,7 +406,7 @@
 
   (when (= id 0)
       (print-verification-status class verified bmname)
-      (let* ([tm-sec (/ (timer-read 1) 1000)]
+      (let* ([tm-sec (/ (timer-read 0) 1000)]
              [results (new-BMResults "IS" 
                                       class
                                       total-keys
@@ -465,7 +465,41 @@
         #:mpi-module (quote-module-path)
         #:mpi-func 'is-place
         #:mpi-args place-args)
-      (rmpi-make-localhost-config num-threads 6341 'is))))
+      ;(rmpi-make-localhost-config num-threads 6341 'is)
+      (rmpi-make-remote-config (list 
+#;"atacama.cs.utah.edu"
+"victoria.cs.utah.edu"
+"kalahari.cs.utah.edu"
+"arctic.cs.utah.edu"
+"gbasin.cs.utah.edu"
+"redrock.cs.utah.edu"
+"gobi.cs.utah.edu"
+"sahara.cs.utah.edu"
+"mojave.cs.utah.edu"
+"victoria.cs.utah.edu"
+"kalahari.cs.utah.edu"
+"arctic.cs.utah.edu"
+"gbasin.cs.utah.edu"
+"redrock.cs.utah.edu"
+"gobi.cs.utah.edu"
+"sahara.cs.utah.edu"
+"mojave.cs.utah.edu"
+"victoria.cs.utah.edu"
+"kalahari.cs.utah.edu"
+"arctic.cs.utah.edu"
+"gbasin.cs.utah.edu"
+"redrock.cs.utah.edu"
+"gobi.cs.utah.edu"
+"sahara.cs.utah.edu"
+"mojave.cs.utah.edu"
+"victoria.cs.utah.edu"
+"kalahari.cs.utah.edu"
+"arctic.cs.utah.edu"
+"gbasin.cs.utah.edu"
+"redrock.cs.utah.edu"
+"gobi.cs.utah.edu"
+"sahara.cs.utah.edu"
+"mojave.cs.utah.edu") num-threads 6342 'is))))
 
 (define (get-mops total-time niter num-keys)  
   (if (> total-time 0) 

@@ -2,13 +2,17 @@
 (provide timer-read
          timer-clear
          timer-start 
-         timer-stop) 
+         timer-stop
+         timer-clear-all)
 (define timers-last-start (make-vector 30 0.0))
 (define running-total (make-vector 30 0.0))
 
 (define (timer-clear arg)
   (vector-set! running-total arg 0.0)
   (vector-set! timers-last-start arg 0.0))
+
+(define (timer-clear-all)
+  (for ([i 30]) (timer-clear i)))
 
 (define (timer-read arg)
   (vector-ref running-total arg))

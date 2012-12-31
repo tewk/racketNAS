@@ -22,6 +22,7 @@
      (begin (provide name)
             (define name val))]))
 
+#;
 (require (only-in racket [vector-ref vr] [vector-set! vs!])
                  
          (rename-in racket/fixnum [fxvector-ref fxr] [fxvector-set! fx!] [fxquotient fx/]
@@ -31,18 +32,23 @@
          racket/fixnum)
 
 ;; unsafe ones
-#;
 (require (rename-in racket/unsafe/ops
                     [unsafe-vector-ref vr] 
                     [unsafe-vector-set! vs!]
                     [unsafe-flvector-ref flr] 
                     [unsafe-flvector-set! fl!]
+                    [unsafe-flvector-ref flvr] 
+                    [unsafe-flvector-set! flvs!]
                     [unsafe-fxvector-ref fxr] 
                     [unsafe-fxvector-set! fx!]
+                    [unsafe-fxvector-ref fxvr] 
+                    [unsafe-fxvector-set! fxvs!]
                     [unsafe-fx+ fx+]
                     [unsafe-fx- fx-]
                     [unsafe-fx= fx=]
-                    [unsafe-fx<= fx<=])
+                    [unsafe-fx* fx*]
+                    [unsafe-fx<= fx<=]
+                    [unsafe-fxquotient fx/])
 
          (only-in racket/fixnum fxvector in-fxvector make-fxvector))
 
@@ -853,7 +859,41 @@
         #:mpi-module (quote-module-path)
         #:mpi-func 'cg-place
         #:mpi-args place-args)
-      (rmpi-make-localhost-config num-threads 6341 'cg))))
+      ;(rmpi-make-localhost-config num-threads 6341 'cg))))
+      (rmpi-make-remote-config (list 
+#;"atacama.cs.utah.edu"
+"victoria.cs.utah.edu"
+"kalahari.cs.utah.edu"
+"arctic.cs.utah.edu"
+"gbasin.cs.utah.edu"
+"redrock.cs.utah.edu"
+"gobi.cs.utah.edu"
+"sahara.cs.utah.edu"
+"mojave.cs.utah.edu"
+"victoria.cs.utah.edu"
+"kalahari.cs.utah.edu"
+"arctic.cs.utah.edu"
+"gbasin.cs.utah.edu"
+"redrock.cs.utah.edu"
+"gobi.cs.utah.edu"
+"sahara.cs.utah.edu"
+"mojave.cs.utah.edu"
+"victoria.cs.utah.edu"
+"kalahari.cs.utah.edu"
+"arctic.cs.utah.edu"
+"gbasin.cs.utah.edu"
+"redrock.cs.utah.edu"
+"gobi.cs.utah.edu"
+"sahara.cs.utah.edu"
+"mojave.cs.utah.edu"
+"victoria.cs.utah.edu"
+"kalahari.cs.utah.edu"
+"arctic.cs.utah.edu"
+"gbasin.cs.utah.edu"
+"redrock.cs.utah.edu"
+"gobi.cs.utah.edu"
+"sahara.cs.utah.edu"
+"mojave.cs.utah.edu") num-threads 6342 'is))))
 
 (define-syntax-rule (v++! v idx)
   (vs! v idx (fx+ (vr v idx) 1)))
