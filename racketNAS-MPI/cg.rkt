@@ -478,9 +478,9 @@
 (define (makea n nz a colidx rowstr nonzer 
                firstrow lastrow firstcol lastcol 
                rcond arow acol aelt v iv shift lrandlc)
-  (define (warn nnza nz iouter)
+  (define (warn nnza nz iouter aa)
     (printf "Space for matrix elements exceeded in makea~n")
-    (printf "nnza, nzmax = ~a, ~a~n" nnza nz)
+    (printf "nnza, nzmax = ~a, ~a ~a~n" nnza nz aa)
     (printf " iouter = ~a~n" iouter)
     (exit 0))
   (define-syntax-rule (++ v) (set! v (add1 v)))
@@ -499,7 +499,7 @@
       (sprnvc n nn1 nonzer v colidx iv 1 iv (add1 n) lrandlc)
       (let* ([nzv (vecset n v colidx nonzer iouter 0.5) ]
              [nnza
-        (begin 
+        (begin
         (for/fold ([nnza nnza]) ([ivelt (in-range 1 (add1 nzv))])
           (define jcol (fxvr colidx ivelt))
           (let ([nnza (if (and (jcol . >= . firstcol) (jcol . <= . lastcol))
@@ -508,7 +508,7 @@
               (if (and (irow . >= . firstrow) (irow . <= . lastrow))
                 (let ([nnza (add1 nnza)])
                   (++ nnza2)
-                  (when (nnza2 . > . nz) (warn nnza2 nz iouter))
+                  (when (nnza2 . > . nz) (warn nnza2 nz iouter "1"))
                   (fxvs! acol nnza2 jcol)
                   (fxvs! arow nnza2 irow)
                   (flvs! aelt nnza2 (* size (flvr v ivelt) (flvr v ivelt1)))
@@ -523,7 +523,7 @@
         (let ([nnza (add1 nnza)])
           (++ nnza2)
           (define iouter (+ n i))
-          (when (nnza2 . > . nz) (warn nnza2 nz iouter))
+          (when (nnza2 . > . nz) (warn nnza2 nz iouter "2"))
           (fxvs! acol nnza2 i)
           (fxvs! arow nnza2 i)
           (flvs! aelt nnza2 (- rcond shift))
@@ -655,7 +655,7 @@
 
 
   (define naa na)
-  (define nz (+ (* na (fx/ (fx+1 nonzer) num-procs) (fx+1 nonzer))
+  (define nz (+ (* (fx/ (* na (fx+1 nonzer)) num-procs) (fx+1 nonzer))
                 nonzer
                 (fx/ (* na (+ nonzer 2 (fx/ num-procs 256))) num-proc-cols)))
   (define nzz nz)
@@ -766,8 +766,8 @@
                [(and (not silent) (= id 0))
                  (define zeta (+ shift (fl/ 1.0 norm-temp10)))
                  (when (= it 0)
-                   (printf "   iteration           ||r||                 zeta\n"))
-                 (printf " ~a ~a ~a\n" it rnorm zeta)
+                   (printf/f "   iteration           ||r||                 zeta\n"))
+                 (printf/f " ~a ~a ~a\n" it rnorm zeta)
                  zeta]
                [else zeta]
                )

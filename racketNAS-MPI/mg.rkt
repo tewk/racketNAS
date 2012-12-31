@@ -116,15 +116,15 @@
   (define-values (nx_default ny_default nz_default nit_default lt_default) (get-class-size class))
   (for ([i T_LAST]) (timer-clear i))
   (rmpi-barrier comm)
-  (with-timer T_INIT
+  (timer-start T_INIT)
 
-  (define nx (make-vector maxlevel 0))
-  (define ny (make-vector maxlevel 0))
-  (define nz (make-vector maxlevel 0))
-  (define ir (make-vector maxlevel 0))
-  (define m1 (make-vector maxlevel 0))
-  (define m2 (make-vector maxlevel 0))
-  (define m3 (make-vector maxlevel 0))
+  (define nx (make-fxvector maxlevel 0))
+  (define ny (make-fxvector maxlevel 0))
+  (define nz (make-fxvector maxlevel 0))
+  (define ir (make-fxvector maxlevel 0))
+  (define m1 (make-fxvector maxlevel 0))
+  (define m2 (make-fxvector maxlevel 0))
+  (define m3 (make-fxvector maxlevel 0))
   (define lt lt_default)
   (define log2-size (ilog2 nx_default))
   (define log2-nprocs (ilog2 nprocs))
@@ -133,41 +133,120 @@
   (define ndim2 (fx- log2-size (fx/ (fx+ log2-nprocs 2) 3)))
   (define ndim3 (fx- log2-size (fx/ (fx+ log2-nprocs 1) 3)))
 
+  (define nm (= 2 (expt 2 lm)))
+  (define nv (* (+ 2 (expt 2 ndim1)) (+ 2 (expt 2 ndim2 )) (+ 2 (expt 2 ndim3))))
+  (define nm2 (* 2 nm nm))
+  (define maxlevel (fx+1 lt_default))
+  (define nr (/ (* 8 (- (+ nv (expt nm 2) (* 5 nm) (* 14 lt_default)) (* 7 lm))) 7))
+
+  (define nbr (make-fxvector (* 4 3 (fx+1 maxlevel))))
+  (define nbr (make-fxvector (* 4 3 ))))
+  (define msg-id (make-fxvector (* 4 4 3)))
+  (define m (+ nm 1))
+  (define (buff (make-vector 5)))
+
   (define lb 1)
   (define k lt)
 
   (printf "LM ndim1 ndim2 ndim3 ~a ~a ~a ~a\n" lm ndim1 ndim2 ndim3)
 
-  (setup )
+  (setup)
 
-  #|
-  ;(define lt1 (fx-- lt)) 
-  (define nit nit_default)
-  (define nm (+ (arithmetic-shift 1 lm) 2))
-  (define nv (* (+ 2 (arithmetic-shift 1 ndim1)) 
-         (+ 2 (arithmetic-shift 1 ndim2)) 
-         (+ 2 (arithmetic-shift 1 ndim3))))
-  (define nr (floor (/ (* 8 (+ nv (* nm nm) (* 5 nm) (* 7 lm))) 7)))
-  (define nm2 (* 2 nm nm))
-  (define r (make-flvector nr 0.0))
-  (define v (make-flvector nv 0.0))
-  (define u (make-flvector nr 0.0))
-  (define a (flvector (/ -8.0 3.0) 0.0 (/ 1.0 6.0) (/ 1.0 12.0)))
-  (define c (case class
-       [(#\A #\S #\W) 
-          (flvector (/ -3.0 8.0) (/ 1.0 32.0) (/ -1.0 64.0) 0.0)]
-       [else
-          (flvector (/ -3.0 17.0) (/ 1.0 33.0) (/ -1.0 61.0) 0.0)]))
+  (define u (make-flvector nr))
+  (define v (make-flvector nv))
+  (define r (make-flvector nr))
+  (define a (flvector (fl/ -8.0 3.0) 0.0 (fl/ 1.0 6.0) (fl/ 1.0 12.0)))
+  (define c
+    (case class
+      [(A S W) (flvector  (fl/ -3.0 8.0) (fl/ 1.0 32.0) (fl/ -1.0 64.0) 0.0)]
+      [else (flvector  (fl/ -3.0 17.0) (fl/ 1.0 33.0) (fl/ -1.0 61.0) 0.0)]))
 
-   (vs! nx lt1 nx_default)
-   (vs! ny lt1 ny_default)
-   (vs! nz lt1 nz_default)
-|#
+  (let ([lb 1]
+        [k lt])
+    (setup n1 n2 n3)
+    (zero3 u n1 n2 n3)
+    (zran3 v n1 n2 n3 (fxr nx lt) (fxr ny lt) k)
+    (let-values ([(rnm2 rnmu) (norm2u3 v n1 n2 n3 rnm2 rnmu (fxr nx lt) (fxr ny lt) (fxr nz lt))])
+      (resid u v r n1 n2 n3 a k)
+      (let-values ([(old2 oldu) (norm2u3 r n1 n2 n3 rnm2 rnmu (fxr nx lt) (fxr ny lt) (fxr nz lt))])
+                  ))
+
+    (mg3P u v r a c n1 n2 n3 k)
+    (resid u v r n1 n2 n3 a k)
+    (setup n1 n2 n3 k)
+    (zero3 u n1 n2 n3)
+    (zran3 v n1 n2 n3 (fxr nx lt) (fxr ny lt) k)
+    (timer-stop T_INIT)
+
+    (when (= id 0)
+      (printf/f "Initialization timer: ~a seconds\n" (fl/ (timer-read T_INIT) 1000.0)))
+
+    (for ([i T_LAST]) (timer-clear i))
+
+    (rmpi-barrier comm)
+
+    (timer-start T_BENCH)
+
+    (resid u v r n1 n2 n3 a k)
+    (define-values (old2 oldu) (norm2u3 r n1 n2 n3 rnm2 rnmu (fxr nx lt) (fxr ny lt) (fxr nz lt)))
+    (for ([it (in-range 1 (fx+1 nit))])
+      (when (and (= id 0) (or (= it 1) (= it nit) (= 0 (modulo it 5))))
+        (printf/f "  iter ~a\n" it))
+      (mg3P u v r a c n1 n2 n3 k)
+      (resid u v r n1 n2 n3 a k))
+
+    (define-values (rnm2 rnmu) (norm2u3 r n1 n2 n3 rnm2 rnmu (fxr nx lt) (fxr ny lt) (fxr nz lt)))
+
+    (timer-stop T_BENCH)
+
+    (define t (rmpi-reduce comm max (timer-read T_BENCH)))
+
+    (when (= id 0)
+      (printf/f "Benchmark completed\n")
+      (define err (flabs (fl/ (fl- rnm2 verify-value) verify-value)))
+      (define verified (< err epsilon))
+      (cond
+        [(< err epsilon)
+         (printf/f "VERIFICATION SUCCESSFUL\n")
+         (printf/f "L2 Norm is ~a\n" rnm2)
+         (printf/f "Error is ~a\n" err)]
+        [else
+         (printf/f "VERIFICATION FAILED\n")
+         (printf/f "L2 Norm is ~a\n" rnm2)
+         (printf/f "The correct L2 Norm is ~a\n" verified-value)])
+
+      (define mflops (if (not (= t 0.0)) (/ (* 58.0 1.0e-6 nit (fxr nx lt) (fxr ny lt) (fxr nz lt)) t)))
+
+      (print-results "MG" class (fxr nx lt) (fxr ny lt) (fxr nz lt) nit nprocs nprocs t mflops
+                     "floating point" verified npbversion)
+      )
+
+    (define t1 (for/flvector #:length T_LAST ([i T_LAST]) (timer-read i)))
+    (fl! t1 T_COMM  (fl+ (flr t1 T_RCOMM) (flr t1 T_COMM3)))
+    (fl! t1 T_COMP  (fl- (flr t1 T_BENCH) (flr t1 T_COMM)))
+
+    (define tsum (rmpi-reduce comm 0 + t1))
+    (define tming (rmpi-reduce comm 0 min t1))
+    (define tmaxg (rmpi-reduce comm 0 max t1))
+
+    (when (= id 0)
+      (printf " nprocs = ~a          minimum     maximum     average\n" nprocs)
+      (for ([i T_LAST]
+            [d '(total conjg rcomm ncomm totcomp totcomm)])
+        (printf " timer ~a (~a): ~a ~a ~a\n"
+                (~r (fx+ i 1) #:min-width 2)
+                (~a d #:width 8)
+                (~r (flr tming i) #:precision '(= 4) #:min-width 10)
+                (~r (flr tmaxg i) #:precision '(= 4) #:min-width 10)
+                (~r (/ (flr tsum i) nprocs) #:precision '(= 4) #:min-width 10)
+                ))
+      (printf "\n"))
+
 
    )
   (rmpi-finish comm tc))
 
-(define (setup lt)
+(define (setup n1 n2 n3 k)
   (define ng (make-fxvector (fx* 4 maxlevel)))
   (define (cidx i j)
     (fx+ (fx* i maxlevel) j))
@@ -567,20 +646,18 @@
   )
 
 (define (give3 axis dir u n1 n2 n3 k)
-  (define (do-send IO II uu XX YY ZZ)
+  (define-syntax-rule (do-send IO II uu XX YY ZZ)
     (define UU (if (= dir -1) 2 (fx-1 uu)))
-    (for ([io (in-range 2 IO)])
-      (for ([ii (in-range 2 II)]
-            [buff-len (in-naturals 1)])
-        (define idx (+ (* XX n2 n3) (* YY n3) ZZ))
-        (fl! buff (fx+ (fx* buf-len 55) buf-id) (flr u idx))))
-    (rmpi-send comm (fxr nbr (+ (* axis 3 K) (fx* dir K) k)) buff))
-
+    (rmpi-send comm (fxr nbr (+ (* axis 3 K) (fx* dir K) k))
+      (for*/flvector ([io IO]
+                      [ii II])
+          (define idx (+ (* XX n2 n3) (* YY n3) ZZ))
+          (flr u idx))))
 
   (case axis
-    [(1) (do-send n3 n2 n1 UU ii io)]
-    [(2) (do-send n3 n1 n2 ii UU io)]
-    [(3) (do-send n2 n1 n3 ii io UU)]
+    [(1) (do-send (in-range 2 n3) (in-range 2 n2)               n1 UU ii io)]
+    [(2) (do-send (in-range 2 n3) (in-range 1 (fx+1 n1))        n2 ii UU io)]
+    [(3) (do-send (in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) n3 ii io UU)]
     ))
 
 (define (take3 axis dir u n1 n2 n3)
@@ -588,16 +665,16 @@
 
   (define-syntax-rule (do-recv IO II uu XX YY ZZ)
     (define UU (if (= dir -1) uu 1))
-    (for ([io (in-range 2 IO)])
-      (for ([ii (in-range 2 II)]
-            [idx (in-naturals 1)])
+    (for*/fold ([i 0]) ([io IO]
+                        [ii II])
         (define IDX (+ (* XX n2 n3) (* YY n3) ZZ))
-        (fl! u IDX (flr buff (fx+ (fx* idx 55) buf-id))))))
+        (fl! u IDX (flr buff i)
+        (fx+1 i))))
 
   (case axis
-    [(1) (do-recv n3 n2 n1 UU ii io)]
-    [(2) (do-recv n3 n1 n2 ii UU io)]
-    [(3) (do-recv n2 n1 n3 ii io UU)]
+    [(1) (do-recv (in-range 2 n3) (in-range 2 n2)               n1 UU ii io)]
+    [(2) (do-recv (in-range 2 n3) (in-range 1 (fx+1 n1))        n2 ii UU io)]
+    [(3) (do-recv (in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) n3 ii io UU)]
     ))
 
 (define (give3-ex axis dir u n1 n2 n3 k)
