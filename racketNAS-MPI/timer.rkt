@@ -1,4 +1,4 @@
-#lang scheme
+#lang racket/base
 (provide timer-read
          timer-clear
          timer-start 

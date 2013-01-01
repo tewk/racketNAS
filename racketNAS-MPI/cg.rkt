@@ -859,8 +859,8 @@
         #:mpi-module (quote-module-path)
         #:mpi-func 'cg-place
         #:mpi-args place-args)
-      ;(rmpi-make-localhost-config num-threads 6341 'cg))))
-      (rmpi-make-remote-config (list 
+      (rmpi-make-localhost-config num-threads 6341 'cg)
+     #;(rmpi-make-remote-config (list 
 #;"atacama.cs.utah.edu"
 "victoria.cs.utah.edu"
 "kalahari.cs.utah.edu"
@@ -893,7 +893,8 @@
 "redrock.cs.utah.edu"
 "gobi.cs.utah.edu"
 "sahara.cs.utah.edu"
-"mojave.cs.utah.edu") num-threads 6342 'is))))
+"mojave.cs.utah.edu") num-threads 6342 'is)
+  )))
 
 (define-syntax-rule (v++! v idx)
   (vs! v idx (fx+ (vr v idx) 1)))
