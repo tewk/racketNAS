@@ -6,10 +6,13 @@
          racket/match
          racket/flonum
          racket/format
+         racket/pretty
          "bm-args.rkt"
          "bm-results.rkt"
          (except-in "rand-generator.rkt" ipow46)
-         "timer.rkt")
+         "timer.rkt"
+         "print-results.rkt"
+         (for-syntax racket/base))
 
 ;; safe primitives
 (define-syntax define/provide
@@ -68,8 +71,8 @@
 (define-syntax-rule (fx++ a) (fx+ a 1))
 (define-syntax-rule (!= a b) (not (= a b)))
 
-(define-syntax-rule (fx+1 x) (fx+ 1 x))
-(define-syntax-rule (fx-1 x) (fx- 1 x))
+(define-syntax-rule (fx+1 x) (fx+ x 1))
+(define-syntax-rule (fx-1 x) (fx- x 1))
 
 (define (ilog2 x)
   (cond
@@ -106,6 +109,8 @@
 
 (define-values (T_BENCH T_INIT T_PSINV T_RESID T_RPRJ3 T_INTERP T_NORM2U3 T_COMM3 T_RCOMM T_TOTCOMP T_TOTCOMM T_LAST)
                (values 0 1 2 3 4 5 6 7 8 9 10 11))
+
+(define-struct COMM (comm dead maxlevel nproc give-ex take-ex nbr buffs nm2))
 
 (define/provide (mg-place ch)
   (define-values (comm args tc) (rmpi-init ch))
@@ -158,29 +163,36 @@
   (define-values (n1 n2 n3 is1 ie1 is2 ie2 is3 ie3) 
                  (setup id maxlevel msg-type lt nx ny nz nprocs dead give-ex take-ex m1 m2 m3 nbr ir))
 
+  (printf/f "KK ~a\n" (list n1 n2 n3 is1 ie1 is2 ie2 is3 ie3))
+
   (define u (make-flvector nr))
   (define v (make-flvector nv))
   (define r (make-flvector nr))
   (define a (flvector (fl/ -8.0 3.0) 0.0 (fl/ 1.0 6.0) (fl/ 1.0 12.0)))
   (define c
     (case class
-      [(A S W) (flvector  (fl/ -3.0 8.0) (fl/ 1.0 32.0) (fl/ -1.0 64.0) 0.0)]
+      [(#\A #\S #\W) (flvector  (fl/ -3.0 8.0) (fl/ 1.0 32.0) (fl/ -1.0 64.0) 0.0)]
       [else (flvector  (fl/ -3.0 17.0) (fl/ 1.0 33.0) (fl/ -1.0 61.0) 0.0)]))
+
+  (define bcomm (COMM comm dead maxlevel nprocs give-ex take-ex nbr (vector 0 (make-flvector nm2)(make-flvector nm2)(make-flvector nm2)(make-flvector nm2)) nm2))
+  ;(match-define (COMM comm dead maxlevel nprocs give-ex take-ex nbr buffs nm2) bcomm)
 
   (let ([lb 1]
         [k lt])
     (setup id maxlevel msg-type lt nx ny nz nprocs dead give-ex take-ex m1 m2 m3 nbr ir)
-    (zero3 u n1 n2 n3)
-    (zran3 comm id v n1 n2 n3 (fxr nx lt) (fxr ny lt) k is1 ie1 is2 ie2 is3 ie3)
-    (let-values ([(rnm2 rnmu) (norm2u3 v n1 n2 n3 rnm2 rnmu (fxr nx lt) (fxr ny lt) (fxr nz lt))])
-      (resid u v r n1 n2 n3 a k)
-      (norm2u3 r n1 n2 n3 rnm2 rnmu (fxr nx lt) (fxr ny lt) (fxr nz lt)))
+    (zero3 u 0 n1 n2 n3)
+    
+    (zran3 bcomm id v n1 n2 n3 (fxr nx lt) (fxr ny lt) k is1 ie1 is2 ie2 is3 ie3)
+    (let-values ([(rnm2 rnmu) (norm2u3 bcomm v n1 n2 n3 (fxr nx lt) (fxr ny lt) (fxr nz lt))])
+      (resid bcomm u 0 v 0 r 0 n1 n2 n3 a k m)
+      (norm2u3 bcomm v n1 n2 n3 (fxr nx lt) (fxr ny lt) (fxr nz lt)))
 
-    (mg3P u v r a c n1 n2 n3 k)
-    (resid u v r n1 n2 n3 a k)
+    (mg3P bcomm u v r a c n1 n2 n3 k lt lb ir m1 m2 m3 m)
+
+    (resid bcomm u 0 v 0 r 0 n1 n2 n3 a k m) 
     (setup id maxlevel msg-type lt nx ny nz nprocs dead give-ex take-ex m1 m2 m3 nbr ir)
-    (zero3 u n1 n2 n3)
-    (zran3 comm id v n1 n2 n3 (fxr nx lt) (fxr ny lt) k is1 ie1 is2 ie2 is3 ie3)
+    (zero3 u 0 n1 n2 n3)
+    (zran3 bcomm id v n1 n2 n3 (fxr nx lt) (fxr ny lt) k is1 ie1 is2 ie2 is3 ie3)
     (timer-stop T_INIT)
 
     (when (= id 0)
@@ -192,34 +204,34 @@
 
     (timer-start T_BENCH)
 
-    (resid u v r n1 n2 n3 a k)
-    (define-values (old2 oldu) (norm2u3 r n1 n2 n3 rnm2 rnmu (fxr nx lt) (fxr ny lt) (fxr nz lt)))
+    (resid bcomm u 0 v 0 r 0 n1 n2 n3 a k m)
+    (define-values (old2 oldu) (norm2u3 bcomm r n1 n2 n3 (fxr nx lt) (fxr ny lt) (fxr nz lt)))
     (for ([it (in-range 1 (fx+1 nit))])
       (when (and (= id 0) (or (= it 1) (= it nit) (= 0 (modulo it 5))))
         (printf/f "  iter ~a\n" it))
-      (mg3P u v r a c n1 n2 n3 k)
-      (resid u v r n1 n2 n3 a k))
+      (mg3P bcomm u v r a c n1 n2 n3 k lt lb ir m1 m2 m3 m)
+      (resid bcomm u 0 v 0 r 0 n1 n2 n3 a k m))
 
-    (define-values (rnm2 rnmu) (norm2u3 r n1 n2 n3 rnm2 rnmu (fxr nx lt) (fxr ny lt) (fxr nz lt)))
+    (define-values (rnm2 rnmu) (norm2u3 bcomm r n1 n2 n3 (fxr nx lt) (fxr ny lt) (fxr nz lt)))
 
     (timer-stop T_BENCH)
-
-    (define t (rmpi-reduce comm max (timer-read T_BENCH)))
+    (define t (rmpi-reduce comm 0 max (timer-read T_BENCH)))
 
     (define verify-value
       (case class
-        [(S) 0.5307707005734e-04]
-        [(W) 0.6467329375339e-05]
-        [(A) 0.2433365309069e-05]
-        [(B) 0.1800564401355e-05]
-        [(C) 0.5706732285740e-06]
-        [(e) 0.1583275060440e-09]
-        [(E) 0.5630442584711e-10]))
+        [(#\S) 0.5307707005734e-04]
+        [(#\W) 0.6467329375339e-05]
+        [(#\A) 0.2433365309069e-05]
+        [(#\B) 0.1800564401355e-05]
+        [(#\C) 0.5706732285740e-06]
+        [(#\D) 0.1583275060440e-09]
+        [(#\E) 0.5630442584711e-10]
+        [else (printf "CLASS NOT FOUND ~v\n" class)]))
 
     (define epsilon 1.e-8)
 
     (when (= id 0)
-      (printf/f "Benchmark completed\n")
+      (printf/f "Benchmark completed ~a\n" (string? class))
       (define err (flabs (fl/ (fl- rnm2 verify-value) verify-value)))
       (define verified (< err epsilon))
       (cond
@@ -234,7 +246,7 @@
 
       (define mflops (if (not (= t 0.0)) (/ (* 58.0 1.0e-6 nit (fxr nx lt) (fxr ny lt) (fxr nz lt)) t) 0.0))
 
-      (print-results "MG" class (fxr nx lt) (fxr ny lt) (fxr nz lt) nit nprocs nprocs t mflops
+      (print-results-fortran "MG" class (fxr nx lt) (fxr ny lt) (fxr nz lt) nit nprocs nprocs (/ t 1000) mflops
                      "floating point" verified 0.1)
       )
 
@@ -249,7 +261,7 @@
     (when (= id 0)
       (printf " nprocs = ~a          minimum     maximum     average\n" nprocs)
       (for ([i T_LAST]
-            [d '(total conjg rcomm ncomm totcomp totcomm)])
+            [d '(bench init psinv resid rprj3 interp norm2u3 comm3 rcomm totcomp totcomm)])
         (printf " timer ~a (~a): ~a ~a ~a\n"
                 (~r (fx+ i 1) #:min-width 2)
                 (~a d #:width 8)
@@ -264,7 +276,7 @@
   (rmpi-finish comm tc))
 
 (define (setup id maxlevel msg-type lt nx ny nz nprocs dead give-ex take-ex m1 m2 m3 nbr ir)
-  (define ng (make-fxvector (fx* 4 maxlevel)))
+  (define ng (make-fxvector (fx* 4 (fx+1 maxlevel))))
   (define next (make-fxvector 4))
   (define mi (make-fxvector (fx* 4 (fx+1 maxlevel))))
   (define mip (make-fxvector (fx* 4 (fx+1 maxlevel))))
@@ -272,23 +284,23 @@
   (define pi (make-fxvector 4))
   (define idin (make-fxvector (fx* 4 4)))
   (define (cidx i j)
-    (fx+ (fx* i maxlevel) j))
+    (fx+ (fx* i (fx+1 maxlevel)) j))
 
   (for* ([j (in-range 0 3)]
          [d (in-range 0 3)])
     (fx! msg-type (fx+ (fx* d 3) j) (fx* 100 (+ j 3 (fx* 10 d)))))
 
-  (fx! ng (fx+ (fx* 1 maxlevel) lt) (fxr nx lt))
-  (fx! ng (fx+ (fx* 2 maxlevel) lt) (fxr ny lt))
-  (fx! ng (fx+ (fx* 3 maxlevel) lt) (fxr nz lt))
+  (fx! ng (cidx 1 lt) (fxr nx lt))
+  (fx! ng (cidx 2 lt) (fxr ny lt))
+  (fx! ng (cidx 3 lt) (fxr nz lt))
   (for ([ax (in-range 1 4)])
     (fx! next ax 1)
     (for ([k 3])
       (fx! ng (fx+ (fx* ax 4) k) (fx/ (fxr ng (fx+ (fx* ax 4) (fx+1 k))) 2))))
   (for ([k (in-range lt 0 -1)])
-    (fx! nx k (fxr ng (fx+ (fx* 1 maxlevel) k)))
-    (fx! ny k (fxr ng (fx+ (fx* 2 maxlevel) k)))
-    (fx! nz k (fxr ng (fx+ (fx* 3 maxlevel) k))))
+    (fx! nx k (fxr ng (cidx 1 k)))
+    (fx! ny k (fxr ng (cidx 2 k)))
+    (fx! nz k (fxr ng (cidx 3 k))))
 
   (define log-p (/ (log (+ nprocs 0.0001))
                    (log 2.0)))
@@ -299,13 +311,13 @@
   (fx! idi 1 (modulo id (fxr pi 1)))
   (fx! pi 2 (arithmetic-shift 1 dy))
   (fx! idi 2 (modulo (fx/ id (fxr pi 1)) (fxr pi 2)))
-  (fx! pi 3 (arithmetic-shift 1 dy))
-  (fx! idi 3 (modulo (fx/ id (fxr pi 1)) (fxr pi 2)))
+  (fx! pi 3 (fx/ nprocs (fx* (fxr pi 1) (fxr pi 2))))
+  (fx! idi 3 (fx/ id (fx* (fxr pi 1) (fxr pi 2))))
 
   (for ([k (in-range lt 0 -1)])
     (vector-set! dead k #f)
     
-    (for ([ax (in-range 1 3)])
+    (for ([ax (in-range 1 4)])
       (v! take-ex (cidx ax k) #f)
       (v! give-ex (cidx ax k) #f)
       
@@ -313,7 +325,7 @@
                                     (fx/ (fx* (fx+ (fxr idi ax) 0) (fxr ng (cidx ax k))) (fxr pi ax))
                                     )))
       
-      (fx! mi (cidx ax k) (fx+ 2
+      (fx! mip (cidx ax k) (fx+ 2
                                (fx- (fx/ (fx* (fx+ (fxr next ax) (fx+ (fxr idi ax) 1)) (fxr ng (cidx ax k))) (fxr pi ax))
                                     (fx/ (fx* (fx+ (fxr next ax) (fx+ (fxr idi ax) 0)) (fxr ng (cidx ax k))) (fxr pi ax))
                                     )))
@@ -342,7 +354,7 @@
       (fx+ (fx* i 4) j))
     (for ([ax (in-range 1 4)])
       (fx! idin (idin-idx ax 2) (modulo (+ (fxr idi ax) (fx+ (fxr next ax) (fxr pi ax))) (fxr pi ax)))
-      (fx! idin (idin-idx ax 0) (modulo (- (fxr idi ax) (fx+ (fxr next ax) (fxr pi ax))) (fxr pi ax))))
+      (fx! idin (idin-idx ax 0) (modulo (fx+ (fx- (fxr idi ax) (fxr next ax)) (fxr pi ax)) (fxr pi ax))))
 
     (define (nbr-idx i j k)
       (+ (* i 3 (fx+1 maxlevel)) (* j (fx+1 maxlevel)) k))
@@ -386,36 +398,32 @@
   
   (values n1 n2 n3 is1 ie1 is2 ie2 is3 ie3))
 
-(define (mg3P u v r a c n1 n2 n3 k lt lb ir m1 m2 m3)
+(define (mg3P bcomm u v r a c n1 n2 n3 k lt lb ir m1 m2 m3 m)
   (for ([k (in-range lt lb -1)])
     (define j (fx-1 k))
-    (rprj3 (flr r (fxr ir k)) (fxr m1 k) (fxr m2 k) (fxr m3 k)
-           (flr r (fxr ir j)) (fxr m1 j) (fxr m2 j) (fxr m3 j) k))
+    (rprj3 bcomm r (fxr ir k) (fxr m1 k) (fxr m2 k) (fxr m3 k) r (fxr ir j) (fxr m1 j) (fxr m2 j) (fxr m3 j) k m))
   (let ([k lb])
-    (zero3 (flr u (fxr ir k)) (fxr m1 k) (fxr m2 k) (fxr m3 k))
-    (psinv (flr r (fxr ir k)) (flr u (fxr ir k)) (fxr m1 k) (fxr m2 k) (fxr m3 k) c k))
+    (zero3 u (fxr ir k) (fxr m1 k) (fxr m2 k) (fxr m3 k))
+    (psinv bcomm r (fxr ir k) u (fxr ir k) (fxr m1 k) (fxr m2 k) (fxr m3 k) c k m))
   
   (for ([k (in-range (fx+1 lb) lt)])
     (define j (fx-1 k))
-    (zero3 (flr u (fxr ir k)) (fxr m1 k) (fxr m2 k) (fxr m3 k))
-    (interp (flr u (fxr ir j)) (fxr m1 j) (fxr m2 j) (fxr m3 j)
-            (flr u (fxr ir k)) (fxr m1 k) (fxr m2 k) (fxr m3 k) k)
-    (resid (flr u (fxr ir k)) (flr r (fxr ir k))
-            (flr r (fxr ir k)) (fxr m1 k) (fxr m2 k) (fxr m3 k) a k)
-    (psinv (flr r (fxr ir k)) (flr u (fxr ir k)) (fxr m1 k) (fxr m2 k) (fxr m3 k) c k))
+    (zero3 u (fxr ir k) (fxr m1 k) (fxr m2 k) (fxr m3 k))
+    (interp bcomm u (fxr ir j) (fxr m1 j) (fxr m2 j) (fxr m3 j) u (fxr ir k) (fxr m1 k) (fxr m2 k) (fxr m3 k) k m)
+    (resid bcomm u (fxr ir k) r (fxr ir k) r (fxr ir k) (fxr m1 k) (fxr m2 k) (fxr m3 k) a k m)
+    (psinv bcomm r (fxr ir k) u (fxr ir k) (fxr m1 k) (fxr m2 k) (fxr m3 k) c k m))
 
   (let ([j (fx-1 lt)]
         [k lt])
-    (interp (flr u (fxr ir j)) (fxr m1 j) (fxr m2 j) (fxr m3 j)
-            u n1 n2 n3 k)
-    (resid u v r n1 n2 n3 a k)
-    (psinv r u n1 n2 n3 c k)))
+    (interp bcomm u (fxr ir j) (fxr m1 j) (fxr m2 j) (fxr m3 j) u 0 n1 n2 n3 k m)
+    (resid bcomm u 0 v 0 r 0 n1 n2 n3 a k m)
+    (psinv bcomm r 0 u 0 n1 n2 n3 c k m)))
 
-(define (psinv r u n1 n2 n3 c k m)
-  (define r1 (flvector (fx+1 m)))
-  (define r2 (flvector (fx+1 m)))
+(define (psinv bcomm r roff u uoff n1 n2 n3 c k m)
+  (define r1 (make-flvector (fx+1 m)))
+  (define r2 (make-flvector (fx+1 m)))
   (define (idx i j k)
-    (+ (fx* i n2 n3) (fx* j n3) k))
+    (+ (fx* i n2 n3) (fx* j n3) k) roff)
   (define (rr v i j k)
     (flr v (idx i j k)))
   (define uidx idx)
@@ -443,13 +451,13 @@
                                     (flr r1 (fx-1 i1))
                                     (flr r1 (fx+1 i1)))))))
                         )))
-  (comm3 u n1 n2 n3 k))
+  (comm3 bcomm u n1 n2 n3 k))
 
-(define (resid u v r n1 n2 n3 a k m)
-  (define u1 (flvector (fx+1 m)))
-  (define u2 (flvector (fx+1 m)))
+(define (resid bcomm u uoff v voff r roff n1 n2 n3 a k m)
+  (define u1 (make-flvector (fx+1 m)))
+  (define u2 (make-flvector (fx+1 m)))
   (define (idx i j k)
-    (+ (fx* i n2 n3) (fx* j n3) k))
+    (+ (fx* i n2 n3) (fx* j n3) k roff))
   (define (rr v i j k)
     (flr v (idx i j k)))
   (define uidx idx)
@@ -477,15 +485,15 @@
                   (fl* (flr a 3) (+ (flr u2 (fx-1 i1))
                                     (flr u2 (fx+1 i1)))))))
                         )))
-  (comm3 r n1 n2 n3 k))
+  (comm3 bcomm r n1 n2 n3 k))
 
-(define (rprj3 r m1k m2k m3k s m1j m2j m3j k m)
-  (define x1 (flvector (fx+1 m)))
-  (define y1 (flvector (fx+1 m)))
+(define (rprj3 bcomm r roff m1k m2k m3k s soff m1j m2j m3j k m)
+  (define x1 (make-flvector (fx+1 m)))
+  (define y1 (make-flvector (fx+1 m)))
   (define (sidx i j k)
-    (+ (fx* i m2j m3j) (fx* j m3j) k))
+    (+ (fx* i m2j m3j) (fx* j m3j) k soff))
   (define (idx i j k)
-    (+ (fx* i m2k m3k) (fx* j m3k) k))
+    (+ (fx* i m2k m3k) (fx* j m3k) k roff))
   (define (rr v i j k)
     (flr v (idx i j k)))
 
@@ -524,14 +532,14 @@
                   (fl* 0.125 (fl+ (flr x1 (fx-1 i1)) (flr x1 (fx+1 i1)) y2))
                   (fl* 0.0625 (fl+ (flr y1 (fx-1 i1)) (flr y1 (fx+1 i1))))))))))
   (define j (fx-1 k))
-  (comm3 s m1j m2j m3j j))
+  (comm3 bcomm s m1j m2j m3j j))
 
-(define (interp z zoff mm1 mm2 mm3 u n1 n2 n3 k m)
-  (define z1 (flvector (fx+1 m)))
-  (define z2 (flvector (fx+1 m)))
-  (define z3 (flvector (fx+1 m)))
+(define (interp bcomm z zoff mm1 mm2 mm3 u uoff n1 n2 n3 k m)
+  (define z1 (make-flvector (fx+1 m)))
+  (define z2 (make-flvector (fx+1 m)))
+  (define z3 (make-flvector (fx+1 m)))
   (define (zr i j k) (flr z (+ (* i mm2 mm3) (* j mm3) k zoff)))
-  (define (uidx i j k) (+ (* i n2 n3) (* j mm3) k))
+  (define (uidx i j k) (+ (* i n2 n3) (* j mm3) k uoff))
   (with-timer T_INTERP
     (cond
       [(and (!= n1 3) (!= n2 3) (!= n3 3))
@@ -540,14 +548,14 @@
          (for ([i1 (in-range 1 (fx+1 mm1))])
            (fl! z1 i1 (fl+ (zr i1 (fx+1 i2) i3) (zr i1 i2 i3)))
            (fl! z2 i1 (fl+ (zr i1 i2 (fx+1 i3)) (zr i1 i2 i3)))
-           (fl! z3 i1 (fl+ (zr i1 (fx+1 i2) (fx+1 i3)) (zr i1 i2 (fx+1 i3)) (flr z1 i1))))
+           (fl! z3 i1 (fl+ (zr i1 (fx+1 i2) (fx+1 i3)) (fl+ (zr i1 i2 (fx+1 i3)) (flr z1 i1)))))
 
          (for ([i1 (in-range 1 mm1)])
            (define ui1 (uidx (fx-1 (fx* 2 i1)) (fx-1 (fx* 2 i2)) (fx-1 (fx* 2 i3))))
            (define ui2 (uidx (fx* 2 i1) (fx-1 (fx* 2 i2)) (fx-1 (fx* 2 i3))))
            (define zv (zr i1 i2 i3))
-           (fl! u ui1 (fl+ (flr u ui1) zr))
-           (fl! u ui2 (fl+ (flr u ui2) (fl* 0.5 (fl* (zr (fx+1 i1) i2 i3) zr)))))
+           (fl! u ui1 (fl+ (flr u ui1) zv))
+           (fl! u ui2 (fl+ (flr u ui2) (fl* 0.5 (fl* (zr (fx+1 i1) i2 i3) zv)))))
 
          (for ([i1 (in-range 1 mm1)])
            (define ui1 (uidx (fx-1 (fx* 2 i1)) (fx* 2 i2) (fx-1 (fx* 2 i3))))
@@ -618,13 +626,15 @@
                                                        (zr (fx+1 i1) i2 i3) 
                                                        (zr i1 (fx+1 i2) i3) 
                                                        (zr i1 i2 i3))))))))]))
-  (comm3_ex u n1 n2 n3 k))
+  (comm3_ex bcomm u n1 n2 n3 k))
 
-(define (norm2u3 comm r n1 n2 n3 nx0 ny0 nz0)
+(define (norm2u3 bcomm r n1 n2 n3 nx0 ny0 nz0)
+  (match-define (COMM comm dead maxlevel nprocs give-ex take-ex nbr buffs nm2) bcomm)
   (define-values (dn s rnmu)
     (with-timer T_NORM2U3
       (define dn (* 1.0 nx0 ny0 nz0))
-      (for*/fold ([s 0.0]
+      (for*/fold ([dn 0.0]
+                  [s 0.0]
                   [rnmu 0.0])
                  ([i3 (in-range 2 n3)]
                   [i2 (in-range 2 n2)]
@@ -636,46 +646,48 @@
           (max rnmu (flabs rv))))))
   (with-timer T_RCOMM
     (values
-      (rmpi-allreduce comm rnmu +)
-      (flsqrt (fl/ (rmpi-allreduce comm s +)
+      (rmpi-allreduce comm + rnmu)
+      (flsqrt (fl/ (rmpi-allreduce comm + s)
                     dn)))))
 
-(define (comm3 u n1 n2 n3 kk dead nprocs)
+(define (comm3 bcomm u n1 n2 n3 kk)
+  (match-define (COMM comm dead maxlevel nprocs give-ex take-ex nbr buffs nm2) bcomm)
   (cond
     [(not (vector-ref dead kk))
      (for ([axis (in-range 1 4)])
        (cond 
          [(!= nprocs 1)
-           (ready axis 0 kk)
-           (ready axis 2 kk)
+           ;(ready axis 0 kk)
+           ;(ready axis 2 kk)
            
-           (give3 axis 2 u n1 n2 n3 kk)
-           (give3 axis 0 u n1 n2 n3 kk)
+           (give3 bcomm axis 2 u n1 n2 n3 kk)
+           (give3 bcomm axis 0 u n1 n2 n3 kk)
            
-           (take3 axis 0 u n1 n2 n3)
-           (take3 axis 2 u n1 n2 n3)]
+           (take3 bcomm axis 0 u n1 n2 n3)
+           (take3 bcomm axis 2 u n1 n2 n3)]
          [else
            (comm1p axis u n1 n2 n3 kk)]))]
     [else
-      (zero3 u n1 n2 n3)]))
+      (zero3 u 0 n1 n2 n3)]))
 
-(define (comm3_ex u n1 n2 n3 kk nprocs take-ex give-ex nbr maxlevel)
+(define (comm3_ex bcomm u n1 n2 n3 kk)
+  (match-define (COMM comm dead maxlevel nprocs give-ex take-ex nbr buffs nm2) bcomm)
 
   (for ([axis (in-range 1 4)])
     (cond
       [(!= nprocs 1)
         (define (peerid axis dir kk) (fxr nbr (+ (* axis 3 (fx+1 maxlevel)) (fx* dir (fx+1 maxlevel)) kk)))
-       (when (take-ex axis kk)
+       (when (vector-ref take-ex (+ (* axis (fx+1 maxlevel) kk)))
          (ready axis 0 kk)
          (ready axis 2 kk)
          (take3-ex (peerid axis 0 kk) u n1 n2 n3)
          (take3-ex (peerid axis 2 kk) u n1 n2 n3))
 
-       (when (give-ex axis kk)
+       (when (vector-ref give-ex (+ (* axis (fx+1 maxlevel) kk)))
          (give3-ex (peerid axis 2 kk) u n1 n2 n3 kk)
          (give3-ex (peerid axis 0 kk) u n1 n2 n3 kk))]
       [else
-        (comm1p-ex axis u n1 n2 n3 kk)])))
+        (comm1p-ex bcomm axis u n1 n2 n3 kk)])))
 
 (define (ready axis dir k nm2)
   #|
@@ -690,13 +702,17 @@
   |#
   (void)
   )
+
+(begin-for-syntax
 (define-syntax-rule (with-syntax-values ([(a ...) b] ...) body ...)                                           
   (syntax-case (list b ...) ()                                                                                  
-    [( (a ...) ...) (let () body ...)]))
+    [( (a ...) ...) (let () body ...)])))
 
-(define (give3 comm axis dir u n1 n2 n3 k maxlevel nbr)
-  (define-syntax-rule (do-send i)
-    (with-syntax-values ([(IO II uu XX YY ZZ) (case i
+(define (give3 bcomm axis dir u n1 n2 n3 k)
+  (match-define (COMM comm dead maxlevel nprocs give-ex take-ex nbr buffs nm2) bcomm)
+  (define-syntax (do-send stx)
+    (syntax-case stx ()
+      [(_ i)    (with-syntax-values ([(IO II uu XX YY ZZ) (case (syntax-e #'i)
         [(1) #'((in-range 2 n3) (in-range 2 n2)               n1 UU ii io)]
         [(2) #'((in-range 2 n3) (in-range 1 (fx+1 n1))        n2 ii UU io)]
         [(3) #'((in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) n3 ii io UU)])])
@@ -706,7 +722,7 @@
         (for*/flvector ([io IO]
                         [ii II])
             (define idx (+ (* XX n2 n3) (* YY n3) ZZ))
-            (flr u idx))))))
+            (flr u idx)))))]))
 
   (case axis
     [(1) (do-send 1)]
@@ -714,79 +730,81 @@
     [(3) (do-send 3)]
     ))
 
-(define (take3 comm axis dir u n1 n2 n3 k maxlevel nbr)
+(define (take3 bcomm axis dir u n1 n2 n3 k)
+  (match-define (COMM comm dead maxlevel nprocs give-ex take-ex nbr buffs nm2) bcomm)
   (define peerid (fxr nbr (+ (* axis 3 (fx+1 maxlevel)) (fx* dir (fx+1 maxlevel)) k)))
   (define buff (with-timer T_COMM3 (rmpi-recv comm peerid)))
 
-  (define-syntax-rule (do-recv i)
-    (with-syntax-values ([(IO II uu XX YY ZZ) (case i
+  (define-syntax (do-recv stx)
+    (syntax-case stx ()
+      [(_ i)      (with-syntax-values ([(IO II uu XX YY ZZ) (case (syntax-e #'i)
         [(1) #'((in-range 2 n3) (in-range 2 n2)               n1 UU ii io)]
         [(2) #'((in-range 2 n3) (in-range 1 (fx+1 n1))        n2 ii UU io)]
         [(3) #'((in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) n3 ii io UU)])])
       #'(let ()
         (define UU (if (= dir -1) uu 1))
-        (for*/fold ([i 0]) ([io IO]
+        (for*/fold ([bi 0]) ([io IO]
                             [ii II])
             (define IDX (+ (* XX n2 n3) (* YY n3) ZZ))
             (fl! u IDX (flr buff i)
-            (fx+1 i))))))
+            (fx+1 bi)))))]))
 
   (case axis
     [(1) (do-recv 1)]
     [(2) (do-recv 2)]
     [(3) (do-recv 3)]))
 
-(define (give3-ex comm axis dir peerid u n1 n2 n3)
-  (define-syntax-rule (do-send i)
-    (with-syntax-values ([(IO II uu XX YY ZZ) (case i
-        [(1) #'(n3 n2 (in-range 1 (fx+1 n3)) (in-range 1 (fx+1 n2)) (in-range (fx-1 n1) (fx+1 n1)) i1 UU i2 i3)]
-        [(2) #'(n3 n1 (in-range 1 (fx+1 n3)) (in-range (fx-1 n2) (fx+1 n2)) (in-range 1 (fx+1 n1)) i2 i1 UU i3)]
-        [(3) #'(n2 n1 (in-range (fx-1 n3) (fx+1 n3)) (in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) i3 i1 i2 UU)])])
+(define (give3-ex bcomm axis dir peerid u n1 n2 n3)
+  (match-define (COMM comm dead maxlevel nprocs give-ex take-ex nbr buffs nm2) bcomm)
+   (define-syntax (do-send stx)
+    (syntax-case stx ()
+      [(_ i)   (with-syntax-values ([(IO II RO RM RI XX YY ZZ) (case (syntax-e #'i)
+        [(1) #'(n3 n2 (in-range 1 (fx+1 n3)) (in-range 1 (fx+1 n2)) (in-range (fx-1 n1) (fx+1 n1)) 2 ii io)]
+        [(2) #'(n3 n1 (in-range 1 (fx+1 n3)) (in-range (fx-1 n2) (fx+1 n2)) (in-range 1 (fx+1 n1)) ii 2 io)]
+        [(3) #'(n2 n1 (in-range (fx-1 n3) (fx+1 n3)) (in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) ii io 2)])])
     #'(rmpi-send comm peerid
       (cond
         [(= dir -1)
-           (define UU 2)
            (for*/flvector ([io IO]
                            [ii II])
              (define IDX (+ (* XX n2 n3) (* YY n3) ZZ))
              (flr u IDX))]
         [else
-           (define UU III)
            (for*/flvector ([io RO]
                            [im RM]
                            [ii RI])
-             (define IDX (+ (* XX n2 n3) (* YY n3) ZZ))
-             (flr u IDX))]))))
+             (define IDX (+ (* ii n2 n3) (* im n3) io))
+             (flr u IDX))])))]))
 
   (case axis
     [(1) (do-send 1)]
     [(2) (do-send 2)]
     [(3) (do-send 3)]))
 
-(define (take3-ex comm axis dir peerid u n1 n2 n3)
-  (define-syntax-rule (do-recv i)
-    (with-syntax-values ([(IO II RO RM RI AA BB XX YY ZZ) (case i
-        [(1) #'(n3 n2 (in-range 1 (fx+1 n3)) (in-range 1 (fx+1 n2)) (in-range 1 3) n1 i1 UU i2 i3)]
-        [(2) #'(n3 n1 (in-range 1 (fx+1 n3)) (in-range 1 3) (in-range 1 (fx+1 n1)) n2 i2 i1 UU i3)]
-        [(3) #'(n2 n1 (in-range 1 3) (in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) n3 i3 i1 i2 UU)])])
+(define (take3-ex bcomm axis dir peerid u n1 n2 n3)
+  (match-define (COMM comm dead maxlevel nprocs give-ex take-ex nbr buffs nm2) bcomm)
+   (define-syntax (do-recv stx)
+    (syntax-case stx ()
+      [(_ i) (with-syntax-values ([(IO II RO RM RI XX YY ZZ) (case (syntax-e #'i)
+        [(1) #'(n3 n2 (in-range 1 (fx+1 n3)) (in-range 1 (fx+1 n2)) (in-range 1 3) n1 ii io)]
+        [(2) #'(n3 n1 (in-range 1 (fx+1 n3)) (in-range 1 3) (in-range 1 (fx+1 n1)) ii n2 io)]
+        [(3) #'(n2 n1 (in-range 1 3) (in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) ii io n3)])])
       #'(let ()
-         (define buff (mpi-recv comm peerid))
+         (define buff (rmpi-recv comm peerid))
         (cond
           [(= dir -1)
-           (define UU AA)
-           (for*/fold ([i 0]) ([io IO]
+           (for*/fold ([bi 0]) ([io IO]
                                [ii II])
              (define IDX (+ (* XX n2 n3) (* YY n3) ZZ))
              (fl! u IDX (flr buff i))
-             (fx+1 i))]
+             (fx+1 bi))]
           [else
-           (define UU BB)
-           (for*/fold ([i 0]) ([io RO]
+           (for*/fold ([bi 0]) ([io RO]
                                [im RM]
                                [ii RM])
-             (define IDX (+ (* XX n2 n3) (* YY n3) ZZ))
+             (define IDX (+ (* ii n2 n3) (* im n3) io))
              (fl! u IDX (flr buff i))
-             (fx+1 i))]))))
+             (fx+1 bi))])))]))
 
   (case axis
     [(1) (do-recv 1)]
@@ -794,27 +812,32 @@
     [(3) (do-recv 3)]))
 
 (define (comm1p axis u n1 n2 n3 kk)
-  (define-syntax-rule (copy-out i j)
-    (with-syntax-values ([(IO II XX YY ZZ NN) (case i
-        [(1) #'((in-range 2 n3) (in-range 2 n2) U ii io n1)]
-        [(2) #'((in-range 2 n3) (in-range 1 (fx+1 n1)) ii U io n2)]
+  (define-syntax (copy-out stx)
+    (syntax-case stx ()
+      [(_ i j)
+      (with-syntax ([U (case (syntax-e #'j) [(1) #'(fx-1 NN) #'2])])
+    (with-syntax-values ([(IO II XX YY ZZ NN) (case (syntax-e #'i)
+        [(1) #'((in-range 2 n3) (in-range 2 n2)               U ii io n1)]
+        [(2) #'((in-range 2 n3) (in-range 1 (fx+1 n1))        ii U io n2)]
         [(3) #'((in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) ii io U n3)])])
-      (with-syntax ([U (case j [(1) #'(fx-1 NN) #'2])])
       #'(for*/flvector ([io IO]
-                      [ii II])
+                        [ii II])
         (define IDX (+ (* XX n2 n3) (* YY n3) ZZ))
-        (flv u IDX)))))
+        (flr u IDX))))]))
 
-  (define-syntax-rule (copy-in v i j)
-    (with-syntax-values ([(IO II XX YY ZZ NN) (case i
+  (define-syntax (copy-in stx)
+    (syntax-case stx ()
+      [(_ v i j)
+      (with-syntax ([U (case (syntax-e #'j) [(1) #'NN #'1])])
+    (with-syntax-values ([(IO II XX YY ZZ NN) (case (syntax-e #'i)
     [(1) #'((in-range 2 n3) (in-range 2 n2) U ii io n1)]
     [(2) #'((in-range 2 n3) (in-range 1 (fx+1 n1)) ii U io n2)]
     [(3) #'((in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) ii io U n3)])])
-      (with-syntax ([U (case j [(1) #'NN #'1])])
-        #'(for*/fold ([i 0]) ([io IO]
+        #'(for*/fold ([bi 0]) ([io IO]
                             [ii II])
           (define IDX (+ (* XX n2 n3) (* YY n3) ZZ))
-          (fl! u IDX (flr v i))))))
+          (fl! u IDX (flr v i))
+          (fx+1 bi))))]))
 
   (define dir1buff
     (case axis
@@ -838,50 +861,55 @@
     [(2) (copy-in dir1buff 2 2)]
     [(3) (copy-in dir1buff 3 2)]))
 
-(define (comm1p-ex axis u n1 n2 n3 kk give-ex take-ex buffs nm2)
-  (define-syntax-rule (copy-zero i) 
-    (with-syntax-values ([(IO II XX YY ZZ) (case i
+(define (comm1p-ex bcomm axis u n1 n2 n3 kk)
+  (match-define (COMM comm dead maxlevel nprocs give-ex take-ex nbr buffs nm2) bcomm)
+  (define-syntax (copy-zero stx)
+    (syntax-case stx ()
+      [(_ i) (with-syntax-values ([(IO II XX YY ZZ) (case (syntax-e #'i)
        [(1) #'((in-range 1 (fx+1 n3)) (in-range 1 (fx+1 n2)) n1 ii io)]
        [(2) #'((in-range 1 (fx+1 n3)) (in-range 1 (fx+1 n1)) ii n2 io)]
        [(3) #'((in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) ii io n3)])])
-    #'(for*/fold ([i 0]) ([io IO]
+    #'(for*/fold ([bi 0]) ([io IO]
                         [ii II])
       (define IDX (+ (* XX n2 n3) (* YY n3) ZZ))
-      (fl! u IDX 0.0))))
+      (fl! u IDX 0.0)))]))
 
-  (define-syntax-rule (copy-zero2 i)
-    (with-syntax-values ([(IO IM II) (case i
+   (define-syntax (copy-zero2 stx)
+    (syntax-case stx ()
+      [(_ i) (with-syntax-values ([(IO IM II) (case (syntax-e #'i)
        [(1) #'((in-range 1 (fx+1 n3)) (in-range 1 (fx+1 n2)) (in-range 1 3))]
        [(2) #'((in-range 1 (fx+1 n3)) (in-range 1 3) (in-range 1 (fx+1 n1)))]
        [(3) #'((in-range 1 3) (in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)))])])
-    #'(for*/fold ([i 0]) ([io IO]
+    #'(for*/fold ([bi 0]) ([io IO]
                         [im IM]
                         [ii II])
       (define IDX (+ (* ii n2 n3) (* im n3) io))
-      (fl! u IDX 0.0))))
+      (fl! u IDX 0.0)))]))
 
-  (define-syntax-rule (copy-out i)
-    (with-syntax-values ([(IO IM II) (case i
+  (define-syntax (copy-out stx)
+    (syntax-case stx ()
+      [(_ i) (with-syntax-values ([(IO IM II) (case (syntax-e #'i)
         [(1) #'((in-range 1 (fx+1 n3)) (in-range 1 (fx+1 n2)) (in-range (fx-1 n1) (fx+1 n1)))]
         [(2) #'((in-range 1 (fx+1 n3)) (in-range (fx-1 n2) (fx+1 n2)) (in-range 1 (fx+1 n1)))]
         [(3) #'((in-range (fx-1 n3) (fx+1 n3)) (in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)))])])
     #'(for*/flvector ([io IO]
-                    [im IM]
-                    [ii II])
+                      [im IM]
+                      [ii II])
+      (printf/f "F ~a ~a ~a ~a ~a ~a\n" ii im io n1 n2 n3)
       (define IDX (+ (* ii n2 n3) (* im n3) io))
-      (flv u IDX))))
+      (flr u IDX)))]))
 
-  (define-syntax-rule (copy-out2 i)
-    (with-syntax-values ([(IO II XX YY ZZ) (case i
+   (define-syntax (copy-out2 stx)
+    (syntax-case stx ()
+      [(_ i) (with-syntax-values ([(IO II XX YY ZZ) (case (syntax-e #'i)
         [(1) #'((in-range 1 (fx+1 n3)) (in-range 1 (fx+1 n2)) 2 ii io)]
         [(2) #'((in-range 1 (fx+1 n3)) (in-range 1 (fx+1 n1)) ii 2 io)]
         [(3) #'((in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) ii io 2)])])
     #'(for*/flvector ([io IO]
                     [ii II])
       (define IDX (+ (* XX n2 n3) (* YY n3) ZZ))
-      (flv u IDX))))
-
-   (when (take-ex axis kk)
+      (flr u IDX)))]))
+   (when (vector-ref take-ex (+ (* axis (fx+1 maxlevel)) kk))
      ;2
      (case axis
        [(1) (copy-zero 1)]
@@ -893,7 +921,7 @@
        [(2) (copy-zero2 2)]
        [(3) (copy-zero2 3)]))
 
-  (when (give-ex axis kk)
+   (when (vector-ref give-ex (+ (* axis (fx+1 maxlevel)) kk))
     (vector-set! buffs 3
       (case axis
         [(1) (copy-out 1)]
@@ -906,13 +934,15 @@
         [(2) (copy-out2 2)]
         [(3) (copy-out2 3)])))
 
-  (match-define (vector v1 v2 v3 v4) buffs)
-  (for ([i (in-range 1 (fx+1 nm2))])
-    (fl! v4 i (flr v3 i))
-    (fl! v2 i (flr v1 i))))
+  ;(pretty-print buffs)
+  (match-define (vector v0 v1 v2 v3 v4) buffs)
+  (vector-set! buffs 4 (flvector-copy v3))
+  (vector-set! buffs 2 (flvector-copy v1))
+  )
 
 
-(define (zran3 comm id z n1 n2 n3 nx ny k is1 ie1 is2 ie2 is3 ie3)
+(define (zran3 bcomm id z n1 n2 n3 nx ny k is1 ie1 is2 ie2 is3 ie3)
+  (match-define (COMM comm dead maxlevel nprocs give-ex take-ex nbr buffs nm2) bcomm)
   (define mm 10)
   (define ten (make-flvector (* (fx+1 mm) 2)))
   (define j1 (make-fxvector (* (fx+1 mm) 2)))
@@ -923,7 +953,7 @@
   (define a1 (power a nx 1 0))
   (define a2 (power a nx ny 0))
   
-  (zero3 z n1 n2 n3)
+  (zero3 z 0 n1 n2 n3)
   
   (define ai (power a nx (fx+ (fx- is2 2) (fx* ny (fx- is3 2))) (fx- is1 2)))
   (define d1 (fx+ (fx- ie1 is1) 1))
@@ -988,6 +1018,7 @@
   (for ([i (in-range mm 0 -1)])
     (define zv1 (flr z (zidx (jxr j1 i1 1) (jxr j2 i1 1) (jxr j3 i1 1))))
     (define best (rmpi-allreduce comm max zv1))
+
     (cond 
      [(= best zv1)
        (jg! 0 i 1 id)
@@ -1024,23 +1055,23 @@
           [j (in-naturals)])
       (jg! j i 0 x)))
 
-    (define m1 (fx+1 i1))
-    (define m0 (fx+1 i0))
+  (define m1 (fx+1 i1))
+  (define m0 (fx+1 i0))
 
-    (rmpi-barrier comm)
+  (rmpi-barrier comm)
 
-    (for* ([i3 (in-range 1 (fx+1 n3))]
-           [i2 (in-range 1 (fx+1 n2))]
-           [i1 (in-range 1 (fx+1 n1))])
-      (fl! z (zidx i1 i2 i3) 0.0))
+  (for* ([i3 (in-range 1 (fx+1 n3))]
+         [i2 (in-range 1 (fx+1 n2))]
+         [i1 (in-range 1 (fx+1 n1))])
+    (fl! z (zidx i1 i2 i3) 0.0))
 
-    (for ([i (in-range mm (fx-1 m0) -1)])
-      (fl! z (zidx (jxr j1 i 0) (jxr j2 i 0) (jxr j3 i 0)) -1.0))
+  (for ([i (in-range mm (fx-1 m0) -1)])
+    (fl! z (zidx (jxr j1 i 0) (jxr j2 i 0) (jxr j3 i 0)) -1.0))
 
-    (for ([i (in-range mm (fx-1 m1) -1)])
-      (fl! z (zidx (jxr j1 i 1) (jxr j2 i 1) (jxr j3 i 1)) 1.0))
+  (for ([i (in-range mm (fx-1 m1) -1)])
+    (fl! z (zidx (jxr j1 i 1) (jxr j2 i 1) (jxr j3 i 1)) 1.0))
 
-    (comm z n1 n2 n3 k))
+  (comm3 bcomm z n1 n2 n3 k))
 
 
 (define (power a n1 n2 n3)
@@ -1086,13 +1117,11 @@
          (swap j3 (fx+1 i) i)]
         [else (k)]))))
 
-(define (zero3 z n1 n2 n3)
+(define (zero3 z zoff n1 n2 n3)
   (for ([i3 (in-range 1 (fx+1 n3))]
         [i2 (in-range 1 (fx+1 n2))]
         [i1 (in-range 1 (fx+1 n1))])
-       (fl! z (fx+ (fx+ (fx* (fx* n2 n1) i3)
-                        (fx* n1 i2))
-                   i1) 0.0)))
+       (fl! z (+ (fx* (fx* n2 n1) i3) (fx* n1 i2) i1 zoff) 0.0)))
 
 (define (main . argv) 
   (let* ([args (parse-cmd-line-args argv "Multi-Grid")]
