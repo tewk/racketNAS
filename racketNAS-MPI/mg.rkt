@@ -136,6 +136,9 @@
   (define m3 (make-fxvector maxlevelx 0))
   (define lt lt_default)
   (define nit nit_default)
+  (fx! nx lt nx_default)
+  (fx! ny lt ny_default)
+  (fx! nz lt nz_default)
   (define log2-size (ilog2 nx_default))
   (define log2-nprocs (ilog2 nprocs))
   (define lm (fx- log2-size (fx/ log2-nprocs 3)))
@@ -146,7 +149,8 @@
   (define give-ex (make-vector (fx* 4 (fx+1 maxlevel))))
   (define take-ex (make-vector (fx* 4 (fx+1 maxlevel))))
   (define nm (+ 2 (expt 2 lm)))
-  (define nv (* (+ 2 (expt 2 ndim1)) (+ 2 (expt 2 ndim2 )) (+ 2 (expt 2 ndim3))))
+  (define nv (* (+ 3 (expt 2 ndim1)) (+ 3 (expt 2 ndim2 )) (+ 2 (expt 2 ndim3))))
+  (define nv_real (* (+ 2 (expt 2 ndim1)) (+ 2 (expt 2 ndim2 )) (+ 2 (expt 2 ndim3))))
   (define nm2 (* 2 nm nm))
   (define nr (fx/ (* 8 (- (+ nv (expt nm 2) (* 5 nm) (* 14 lt_default)) (* 7 lm))) 7))
   (define msg-type (make-fxvector (* 4 3)))
@@ -158,7 +162,7 @@
   (define lb 1)
   (define k lt)
 
-  (printf "id LM ndim1 ndim2 ndim3 ~a ~a ~a ~a ~a\n" id lm ndim1 ndim2 ndim3)
+  (printf "id LM ndim1 ndim2 ndim3 ~a ~a ~a ~a ~a ~a ~a\n" id lm ndim1 ndim2 ndim3 nr nv)
 
   (define-values (n1 n2 n3 is1 ie1 is2 ie2 is3 ie3) 
                  (setup id maxlevel msg-type lt nx ny nz nprocs dead give-ex take-ex m1 m2 m3 nbr ir))
@@ -183,7 +187,14 @@
     (zero3 u 0 n1 n2 n3)
     
     (zran3 bcomm id v n1 n2 n3 (fxr nx lt) (fxr ny lt) k is1 ie1 is2 ie2 is3 ie3)
+    #;(for ([i (in-range (+ (* 32 32) 32 1) (+ 1 32 nv_real (* 32 32)))])
+      (when (!= (flr v i) 0.0)
+        (printf/f "AA ~a ~a\n" (- i (+ 32 (* 32 32))) (flr v i))))
+    (for ([i (in-range nv)])
+      (when (!= (flr v i) 0.0)
+        (printf/f "AA ~a ~a\n" i(flr v i))))
     (let-values ([(rnm2 rnmu) (norm2u3 bcomm v n1 n2 n3 (fxr nx lt) (fxr ny lt) (fxr nz lt))])
+      (printf/f "K2 ~a ~a\n" rnm2 rnmu)
       (resid bcomm u 0 v 0 r 0 n1 n2 n3 a k m)
       (norm2u3 bcomm v n1 n2 n3 (fxr nx lt) (fxr ny lt) (fxr nz lt)))
 
@@ -231,7 +242,7 @@
     (define epsilon 1.e-8)
 
     (when (= id 0)
-      (printf/f "Benchmark completed ~a\n" (string? class))
+      (printf/f "Benchmark completed\n")
       (define err (flabs (fl/ (fl- rnm2 verify-value) verify-value)))
       (define verified (< err epsilon))
       (cond
@@ -244,7 +255,7 @@
          (printf/f "L2 Norm is ~a\n" rnm2)
          (printf/f "The correct L2 Norm is ~a\n" verify-value)])
 
-      (define mflops (if (not (= t 0.0)) (/ (* 58.0 1.0e-6 nit (fxr nx lt) (fxr ny lt) (fxr nz lt)) t) 0.0))
+      (define mflops (if (!= t 0.0) (/ (* 58.0 1.0e-6 nit (fxr nx lt) (fxr ny lt) (fxr nz lt)) (/ t 1000)) 0.0))
 
       (print-results-fortran "MG" class (fxr nx lt) (fxr ny lt) (fxr nz lt) nit nprocs nprocs (/ t 1000) mflops
                      "floating point" verified 0.1)
@@ -265,9 +276,9 @@
         (printf " timer ~a (~a): ~a ~a ~a\n"
                 (~r (fx+ i 1) #:min-width 2)
                 (~a d #:width 8)
-                (~r (flr tming i) #:precision '(= 4) #:min-width 10)
-                (~r (flr tmaxg i) #:precision '(= 4) #:min-width 10)
-                (~r (/ (flr tsum i) nprocs) #:precision '(= 4) #:min-width 10)
+                (~r (/ (flr tming i) 1000) #:precision '(= 6) #:min-width 10)
+                (~r (/ (flr tmaxg i) 1000) #:precision '(= 6) #:min-width 10)
+                (~r (/ (/ (flr tsum i) 1000) nprocs) #:precision '(= 6) #:min-width 10)
                 ))
       (printf "\n"))
 
@@ -295,8 +306,8 @@
   (fx! ng (cidx 3 lt) (fxr nz lt))
   (for ([ax (in-range 1 4)])
     (fx! next ax 1)
-    (for ([k 3])
-      (fx! ng (fx+ (fx* ax 4) k) (fx/ (fxr ng (fx+ (fx* ax 4) (fx+1 k))) 2))))
+    (for ([k (in-range (fx-1 lt) 0 -1)])
+      (fx! ng (cidx ax k) (fx/ (fxr ng (cidx ax (fx+1 k))) 2))))
   (for ([k (in-range lt 0 -1)])
     (fx! nx k (fxr ng (cidx 1 k)))
     (fx! ny k (fxr ng (cidx 2 k)))
@@ -376,6 +387,7 @@
   (define k lt)
   (define is1 (- (+ 2 (fxr ng (cidx 1 k)))
                  (fx/ (fx* (- (fxr pi 1) 0 (fxr idi 1)) (fxr ng (cidx 1 lt))) (fxr pi 1))))
+
   (define ie1 (- (+ 1 (fxr ng (cidx 1 k)))
                  (fx/ (fx* (- (fxr pi 1) 1 (fxr idi 1)) (fxr ng (cidx 1 lt))) (fxr pi 1))))
   (define n1 (+ 3 (- ie1 is1)))
@@ -385,9 +397,9 @@
                  (fx/ (fx* (- (fxr pi 2) 1 (fxr idi 2)) (fxr ng (cidx 2 lt))) (fxr pi 2))))
   (define n2 (+ 3 (- ie2 is2)))
 
-  (define is3 (- (+ 2 (fxr ng (cidx 1 k)))
+  (define is3 (- (+ 2 (fxr ng (cidx 3 k)))
                  (fx/ (fx* (- (fxr pi 3) 0 (fxr idi 3)) (fxr ng (cidx 3 lt))) (fxr pi 3))))
-  (define ie3 (- (+ 1 (fxr ng (cidx 1 k)))
+  (define ie3 (- (+ 1 (fxr ng (cidx 3 k)))
                  (fx/ (fx* (- (fxr pi 3) 1 (fxr idi 3)) (fxr ng (cidx 3 lt))) (fxr pi 3))))
   (define n3 (+ 3 (- ie3 is3)))
 
@@ -423,7 +435,7 @@
   (define r1 (make-flvector (fx+1 m)))
   (define r2 (make-flvector (fx+1 m)))
   (define (idx i j k)
-    (+ (fx* i n2 n3) (fx* j n3) k) roff)
+    (+ (fx* i (fx* n2 n3)) (fx* j n3) k) roff)
   (define (rr v i j k)
     (flr v (idx i j k)))
   (define uidx idx)
@@ -444,8 +456,8 @@
           (fl! u (uidx i1 i2 i3)
                (+ (rr u i1 i2 i3)
                   (fl* (flr c 0) (rr r i1 i2 i3))
-                  (fl* (flr c 1) (+ (rr (fx-1 i1) i2 i3)
-                                    (rr (fx+1 i1) i2 i3)
+                  (fl* (flr c 1) (+ (rr r (fx-1 i1) i2 i3)
+                                    (rr r (fx+1 i1) i2 i3)
                                     (flr r1 i1)))
                   (fl* (flr c 3) (+ (flr r2 i1)
                                     (flr r1 (fx-1 i1))
@@ -457,7 +469,7 @@
   (define u1 (make-flvector (fx+1 m)))
   (define u2 (make-flvector (fx+1 m)))
   (define (idx i j k)
-    (+ (fx* i n2 n3) (fx* j n3) k roff))
+    (+ (fx* i (fx* n2 n3)) (fx* j n3) k roff))
   (define (rr v i j k)
     (flr v (idx i j k)))
   (define uidx idx)
@@ -491,9 +503,9 @@
   (define x1 (make-flvector (fx+1 m)))
   (define y1 (make-flvector (fx+1 m)))
   (define (sidx i j k)
-    (+ (fx* i m2j m3j) (fx* j m3j) k soff))
+    (+ (fx* i (fx* m2j m3j)) (fx* j m3j) k soff))
   (define (idx i j k)
-    (+ (fx* i m2k m3k) (fx* j m3k) k roff))
+    (+ (fx* i (fx* m2k m3k)) (fx* j m3k) k roff))
   (define (rr v i j k)
     (flr v (idx i j k)))
 
@@ -528,8 +540,8 @@
                                (rr r i1 i2 (fx+1 i3))))
           (fl! s (sidx j1 j2 j3)
                (+ (fl* 0.5 (rr r i1 i2 i3))
-                  (fl* 0.25 (fl+ (rr r (fx-1 i1) i2 i3) (rr r (fx+1 i1) i2 i3) x2))
-                  (fl* 0.125 (fl+ (flr x1 (fx-1 i1)) (flr x1 (fx+1 i1)) y2))
+                  (fl* 0.25 (fl+ (rr r (fx-1 i1) i2 i3) (fl+(rr r (fx+1 i1) i2 i3) x2)))
+                  (fl* 0.125 (fl+ (flr x1 (fx-1 i1)) (fl+ (flr x1 (fx+1 i1)) y2)))
                   (fl* 0.0625 (fl+ (flr y1 (fx-1 i1)) (flr y1 (fx+1 i1))))))))))
   (define j (fx-1 k))
   (comm3 bcomm s m1j m2j m3j j))
@@ -633,22 +645,25 @@
   (define-values (dn s rnmu)
     (with-timer T_NORM2U3
       (define dn (* 1.0 nx0 ny0 nz0))
-      (for*/fold ([dn 0.0]
+      (for*/fold ([dn dn]
                   [s 0.0]
                   [rnmu 0.0])
                  ([i3 (in-range 2 n3)]
                   [i2 (in-range 2 n2)]
                   [i1 (in-range 2 n1)])
-        (define rv (flr r (+ (* i1 n2 n3) (fx* i2 n3) i3)))
+        (define idx (+ (* i1 n2 n3) (fx* i2 n3) i3))
+        (define rv (flr r idx))
+        (when (!= rv 0.0)
+          (printf/f "~a ~a ~a\n" idx rv dn))
         (values
           dn
           (fl+ s (expt rv 2))
           (max rnmu (flabs rv))))))
   (with-timer T_RCOMM
     (values
+      (flsqrt (fl/ (rmpi-allreduce comm + s) dn))
       (rmpi-allreduce comm + rnmu)
-      (flsqrt (fl/ (rmpi-allreduce comm + s)
-                    dn)))))
+      )))
 
 (define (comm3 bcomm u n1 n2 n3 kk)
   (match-define (COMM comm dead maxlevel nprocs give-ex take-ex nbr buffs nm2) bcomm)
@@ -815,29 +830,31 @@
   (define-syntax (copy-out stx)
     (syntax-case stx ()
       [(_ i j)
-      (with-syntax ([U (case (syntax-e #'j) [(1) #'(fx-1 NN) #'2])])
-    (with-syntax-values ([(IO II XX YY ZZ NN) (case (syntax-e #'i)
-        [(1) #'((in-range 2 n3) (in-range 2 n2)               U ii io n1)]
-        [(2) #'((in-range 2 n3) (in-range 1 (fx+1 n1))        ii U io n2)]
-        [(3) #'((in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) ii io U n3)])])
+      (with-syntax ([NN (case (syntax-e #'i) [(1) #'n1] [(2) #'n2] [(3) #'n3])])
+      (with-syntax ([U (case (syntax-e #'j) [(1) #'(fx-1 NN)] [(2) #'2])])
+    (with-syntax-values ([(IO II XX YY ZZ) (case (syntax-e #'i)
+        [(1) #'((in-range 2 n3) (in-range 2 n2)               U ii io)]
+        [(2) #'((in-range 2 n3) (in-range 1 (fx+1 n1))        ii U io)]
+        [(3) #'((in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) ii io U)])])
       #'(for*/flvector ([io IO]
                         [ii II])
         (define IDX (+ (* XX n2 n3) (* YY n3) ZZ))
-        (flr u IDX))))]))
+        (flr u IDX)))))]))
 
   (define-syntax (copy-in stx)
     (syntax-case stx ()
       [(_ v i j)
-      (with-syntax ([U (case (syntax-e #'j) [(1) #'NN #'1])])
-    (with-syntax-values ([(IO II XX YY ZZ NN) (case (syntax-e #'i)
-    [(1) #'((in-range 2 n3) (in-range 2 n2) U ii io n1)]
-    [(2) #'((in-range 2 n3) (in-range 1 (fx+1 n1)) ii U io n2)]
-    [(3) #'((in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) ii io U n3)])])
+      (with-syntax ([NN (case (syntax-e #'i) [(1) #'n1] [(2) #'n2] [(3) #'n3])])
+      (with-syntax ([U (case (syntax-e #'j) [(1) #'NN] [(2) #'1])])
+    (with-syntax-values ([(IO II XX YY ZZ) (case (syntax-e #'i)
+    [(1) #'((in-range 2 n3) (in-range 2 n2) U ii io)]
+    [(2) #'((in-range 2 n3) (in-range 1 (fx+1 n1)) ii U io)]
+    [(3) #'((in-range 1 (fx+1 n2)) (in-range 1 (fx+1 n1)) ii io U)])])
         #'(for*/fold ([bi 0]) ([io IO]
                             [ii II])
           (define IDX (+ (* XX n2 n3) (* YY n3) ZZ))
           (fl! u IDX (flr v i))
-          (fx+1 bi))))]))
+          (fx+1 bi)))))]))
 
   (define dir1buff
     (case axis
@@ -952,6 +969,7 @@
   (define a (expt 5 13))
   (define a1 (power a nx 1 0))
   (define a2 (power a nx ny 0))
+  (printf/f "POWER ~a ~a\n" a1 a2)
   
   (zero3 z 0 n1 n2 n3)
   
@@ -965,34 +983,37 @@
   (for/fold ([x0 x0]) ([i3 (in-range 2 (fx+1 e3))])
     (define x1 x0)
     (for/fold ([x1 x0]) ([i2  (in-range 2 (fx+1 e2))])
+      ;(printf/f "ZZ ~a ~a\n" x0 x1)
       (vranlc d1 x1 a z (+ (* 2 n2 n3) (* i2 n3) i3))
-      (randlc/a x1 a2))
+      (randlc/a x1 a1))
     (randlc/a x0 a2))
 
-  (for ([i (in-range 1 mm)])
+  (for ([i (in-range 1 (fx+1 mm))])
     (define idx (fx+1 (fx* i 2)))
     (define idx2 (fx* i 2))
     (fl! ten idx 0.0)
     (fx! j1 idx 0)
     (fx! j2 idx 0)
     (fx! j3 idx 0)
-    (fl! ten idx2 0.0)
+    (fl! ten idx2 1.0)
     (fx! j1 idx2 0)
     (fx! j2 idx2 0)
     (fx! j3 idx2 0))
 
-  (for ([i3 (in-range 2 n3)]
-        [i2 (in-range 2 n2)]
-        [i1 (in-range 2 n1)])
+  (for* ([i3 (in-range 2 n3)]
+         [i2 (in-range 2 n2)]
+         [i1 (in-range 2 n1)])
     (define IDX (+ (* i1 n2 n3) (* i2 n3) i3))
     (define zv (flr z IDX))
     (when (> zv (flr ten 3))
+      (printf/f "+VV ~a ~a ~a ~a ~a ~a\n" i1 i2 i3 zv IDX (flr ten 3))
       (fl! ten 3 zv)
       (fx! j1 3 i1)
       (fx! j2 3 i2)
       (fx! j3 3 i3)
       (bubble ten j1 j2 j3 mm 1))
     (when (< zv (flr ten 2))
+      (printf/f "-VV ~a ~a ~a ~a ~a ~a\n" i1 i2 i3 zv IDX (flr ten 2))
       (fl! ten 2 zv)
       (fx! j1 2 i1)
       (fx! j2 2 i2)
@@ -1036,14 +1057,14 @@
           [j (in-naturals)])
       (jg! j i 1 x))
 
-    (define zv2 (flr z (zidx (jxr j1 i1 0) (jxr j2 i1 0) (jxr j3 i1 0))))
-    (define best2 (rmpi-allreduce comm max zv2))
+    (define zv2 (flr z (zidx (jxr j1 i0 0) (jxr j2 i0 0) (jxr j3 i0 0))))
+    (define best2 (rmpi-allreduce comm min zv2))
     (cond 
      [(= best2 zv2)
        (jg! 0 i 0 id)
-       (jg! 1 i 0 (fx+ (fx- is1 2) (jxr j1 i1 0)))
-       (jg! 2 i 0 (fx+ (fx- is2 2) (jxr j2 i1 0)))
-       (jg! 3 i 0 (fx+ (fx- is3 2) (jxr j3 i1 0)))
+       (jg! 1 i 0 (fx+ (fx- is1 2) (jxr j1 i0 0)))
+       (jg! 2 i 0 (fx+ (fx- is2 2) (jxr j2 i0 0)))
+       (jg! 3 i 0 (fx+ (fx- is3 2) (jxr j3 i0 0)))
        (set! i0 (fx-1 i0))]
      [else
        (jg! 0 i 0 0)
@@ -1066,9 +1087,11 @@
     (fl! z (zidx i1 i2 i3) 0.0))
 
   (for ([i (in-range mm (fx-1 m0) -1)])
+    (printf/f "-1 ~a ~a ~a ~a\n" (jxr j1 i 0) (jxr j2 i 0) (jxr j3 i 0) (zidx (jxr j1 i 0) (jxr j2 i 0) (jxr j3 i 0)))
     (fl! z (zidx (jxr j1 i 0) (jxr j2 i 0) (jxr j3 i 0)) -1.0))
 
   (for ([i (in-range mm (fx-1 m1) -1)])
+    (printf/f "+1 ~a ~a ~a ~a\n" (jxr j1 i 1) (jxr j2 i 1) (jxr j3 i 1) (zidx (jxr j1 i 1) (jxr j2 i 1) (jxr j3 i 1)))
     (fl! z (zidx (jxr j1 i 1) (jxr j2 i 1) (jxr j3 i 1)) 1.0))
 
   (comm3 bcomm z n1 n2 n3 k))
@@ -1081,18 +1104,21 @@
              [nj n3]
              [n2j n2]
              [power 1.0])
+    (define (ending aj nj n2j power)
+      (loop (randlc/a aj aj)
+            (quotient nj 2)
+             n2j                                                                                               
+             (if (= (modulo nj 2) 1) (randlc/a power aj) power)))
     (cond
+      [(> n2j 0)
+       (ending 
+         aj 
+         (if (= (modulo n2j 2) 1) (+ nj n1j) nj)
+         (quotient n2j 2)
+         power)]
       [(= nj 0) power]
       [else
-        (let* ([t (> n2j 0)]
-               [nj (if t (+ nj n1j) nj)]
-               [n2j (if t (quotient n2j 2) n2j)])
-          (loop
-            (randlc/a aj aj)
-            (quotient nj 2)
-            n2j
-            (if (= (modulo nj 2) 1) (randlc/a power aj) power))
-          )]
+        (ending aj nj n2j power) ]
       ))
    )
 
@@ -1106,18 +1132,25 @@
     (define t (flr v i1x))
     (fl! v i1x (flr v i2x))
     (fl! v i2x t))
+  (define (swapfx v i1 i2)
+    (define i1x (fx+ (fx* i1 2) ind))
+    (define i2x (fx+ (fx* i2 2) ind))
+    (define t (fxr v i1x))
+    (fx! v i1x (fxr v i2x))
+    (fx! v i2x t))
   
   (let/ec k
     (for ([i (in-range 1 m)])
       (cond 
         [(op (tenr i ind) (tenr (fx+1 i) ind))
          (swap ten (fx+1 i) i)
-         (swap j1 (fx+1 i) i)
-         (swap j2 (fx+1 i) i)
-         (swap j3 (fx+1 i) i)]
+         (swapfx j1 (fx+1 i) i)
+         (swapfx j2 (fx+1 i) i)
+         (swapfx j3 (fx+1 i) i)]
         [else (k)]))))
 
 (define (zero3 z zoff n1 n2 n3)
+;  (printf/f "KKK ~a ~a ~a ~a ~a\n" (flvector-length z) zoff n1 n2 n3)
   (for ([i3 (in-range 1 (fx+1 n3))]
         [i2 (in-range 1 (fx+1 n2))]
         [i1 (in-range 1 (fx+1 n1))])
