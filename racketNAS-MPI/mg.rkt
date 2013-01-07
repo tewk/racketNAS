@@ -187,12 +187,6 @@
     (zero3 u 0 n1 n2 n3)
     
     (zran3 bcomm id v n1 n2 n3 (fxr nx lt) (fxr ny lt) k is1 ie1 is2 ie2 is3 ie3)
-    #;(for ([i (in-range (+ (* 32 32) 32 1) (+ 1 32 nv_real (* 32 32)))])
-      (when (!= (flr v i) 0.0)
-        (printf/f "AA ~a ~a\n" (- i (+ 32 (* 32 32))) (flr v i))))
-    (for ([i (in-range nv)])
-      (when (!= (flr v i) 0.0)
-        (printf/f "AA ~a ~a\n" i(flr v i))))
     (let-values ([(rnm2 rnmu) (norm2u3 bcomm v n1 n2 n3 (fxr nx lt) (fxr ny lt) (fxr nz lt))])
       (printf/f "K2 ~a ~a\n" rnm2 rnmu)
       (resid bcomm u 0 v 0 r 0 n1 n2 n3 a k m)
@@ -201,6 +195,8 @@
     (mg3P bcomm u v r a c n1 n2 n3 k lt lb ir m1 m2 m3 m)
 
     (resid bcomm u 0 v 0 r 0 n1 n2 n3 a k m) 
+
+
     (setup id maxlevel msg-type lt nx ny nz nprocs dead give-ex take-ex m1 m2 m3 nbr ir)
     (zero3 u 0 n1 n2 n3)
     (zran3 bcomm id v n1 n2 n3 (fxr nx lt) (fxr ny lt) k is1 ie1 is2 ie2 is3 ie3)
@@ -654,7 +650,7 @@
         (define idx (+ (* i1 n2 n3) (fx* i2 n3) i3))
         (define rv (flr r idx))
         (when (!= rv 0.0)
-          (printf/f "~a ~a ~a\n" idx rv dn))
+          (printf/f "NORM2u3 ~a ~a ~a\n" idx rv dn))
         (values
           dn
           (fl+ s (expt rv 2))
@@ -969,7 +965,6 @@
   (define a (expt 5 13))
   (define a1 (power a nx 1 0))
   (define a2 (power a nx ny 0))
-  (printf/f "POWER ~a ~a\n" a1 a2)
   
   (zero3 z 0 n1 n2 n3)
   
@@ -981,10 +976,11 @@
   (define x0 (randlc/a 314159265.0 ai))
 
   (for/fold ([x0 x0]) ([i3 (in-range 2 (fx+1 e3))])
-    (define x1 x0)
     (for/fold ([x1 x0]) ([i2  (in-range 2 (fx+1 e2))])
-      ;(printf/f "ZZ ~a ~a\n" x0 x1)
-      (vranlc d1 x1 a z (+ (* 2 n2 n3) (* i2 n3) i3))
+      (for/fold ([xx x1]) ([i (in-range d1)])
+        (define-values (xxn r) (randlc/2 xx a))
+        (fl! z (+ (* (+ 2 i) n2 n3) (* i2 n3) i3) r)
+        xxn)
       (randlc/a x1 a1))
     (randlc/a x0 a2))
 
@@ -1006,14 +1002,12 @@
     (define IDX (+ (* i1 n2 n3) (* i2 n3) i3))
     (define zv (flr z IDX))
     (when (> zv (flr ten 3))
-      (printf/f "+VV ~a ~a ~a ~a ~a ~a\n" i1 i2 i3 zv IDX (flr ten 3))
       (fl! ten 3 zv)
       (fx! j1 3 i1)
       (fx! j2 3 i2)
       (fx! j3 3 i3)
       (bubble ten j1 j2 j3 mm 1))
     (when (< zv (flr ten 2))
-      (printf/f "-VV ~a ~a ~a ~a ~a ~a\n" i1 i2 i3 zv IDX (flr ten 2))
       (fl! ten 2 zv)
       (fx! j1 2 i1)
       (fx! j2 2 i2)
@@ -1087,11 +1081,11 @@
     (fl! z (zidx i1 i2 i3) 0.0))
 
   (for ([i (in-range mm (fx-1 m0) -1)])
-    (printf/f "-1 ~a ~a ~a ~a\n" (jxr j1 i 0) (jxr j2 i 0) (jxr j3 i 0) (zidx (jxr j1 i 0) (jxr j2 i 0) (jxr j3 i 0)))
+    ;(printf/f "-1 ~a ~a ~a ~a\n" (jxr j1 i 0) (jxr j2 i 0) (jxr j3 i 0) (zidx (jxr j1 i 0) (jxr j2 i 0) (jxr j3 i 0)))
     (fl! z (zidx (jxr j1 i 0) (jxr j2 i 0) (jxr j3 i 0)) -1.0))
 
   (for ([i (in-range mm (fx-1 m1) -1)])
-    (printf/f "+1 ~a ~a ~a ~a\n" (jxr j1 i 1) (jxr j2 i 1) (jxr j3 i 1) (zidx (jxr j1 i 1) (jxr j2 i 1) (jxr j3 i 1)))
+    ;(printf/f "+1 ~a ~a ~a ~a\n" (jxr j1 i 1) (jxr j2 i 1) (jxr j3 i 1) (zidx (jxr j1 i 1) (jxr j2 i 1) (jxr j3 i 1)))
     (fl! z (zidx (jxr j1 i 1) (jxr j2 i 1) (jxr j3 i 1)) 1.0))
 
   (comm3 bcomm z n1 n2 n3 k))
